@@ -52,6 +52,13 @@ variable "enable_foundry_gateway_model_access" {
   nullable    = false
 }
 
+variable "enable_foundry_gateway_tool_access" {
+  description = "Opt in to a root-owned AI Gateway Tools User grant for only the Foundry project identity at exact gateway scope. Independent of model grants and the RemoteTool reference; creates no ToolServer or Toolbox and proves no invocation."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "enable_foundry_monitoring_integration" {
   description = "Opt in to an in-place ProjectManagedIdentity body change on the existing owned Foundry AppInsights connection and two Insights-scoped publisher grants. Not tracing-delivery or Entra-only acceptance."
   type        = bool
@@ -60,7 +67,7 @@ variable "enable_foundry_monitoring_integration" {
 }
 
 variable "gateway_remote_tool_endpoint" {
-  description = "Explicit independently verified HTTPS tool endpoint on this gateway. Null creates no RemoteTool connection. No MCP route, ToolServer or Toolbox is inferred or provisioned."
+  description = "Explicit independently verified HTTPS tool endpoint returned by this gateway's ToolServer. Null creates no RemoteTool connection. No MCP route, ToolServer or Toolbox is inferred or provisioned."
   type        = string
   default     = null
   validation {

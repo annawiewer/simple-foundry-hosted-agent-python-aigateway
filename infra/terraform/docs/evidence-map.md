@@ -9,15 +9,18 @@ its provenance and must not be combined into inflated test or acceptance counts.
 
 | Area | Latest established evidence | Remaining boundary |
 |---|---|---|
-| Terraform offline contracts | **PASS:** 53 native mocked runs, semantic inspection of those same 53 plans, and 25 Python tests (14 adapter, eleven readback). All 13 positive root handoffs feed the real adapter, including Responses-only and custom aliases. Five locked roots initialize and validate; formatting, structure and script parsing pass. | No Azure deployment or runtime acceptance. The 13 handoffs are checks within the 53 plans, not extra runs. |
+| Terraform offline contracts | **PASS:** 55 native mocked runs, semantic inspection of those same 55 plans, and 25 Python tests (14 adapter, eleven readback). All 15 positive root handoffs feed the real adapter, including Responses-only and custom aliases. Five locked roots initialize and validate; formatting, structure and script parsing pass. | No Azure deployment or runtime acceptance. The 15 handoffs are checks within the 55 plans, not extra runs. |
+| Project gateway tool access | **Implemented/offline qualified:** independent default-off project-only Tools User grant; exact gateway scope, separate model-role ownership and combined/RemoteTool dependency checks. A separate read-only ARM GET confirmed the built-in role definition and its standalone-gateway data action. | No tools assignment, ToolServer, credential delivery or runtime allow/deny was performed. Definition availability in the inspected target does not establish availability everywhere. |
 | Latest deployed configuration | **Qualified:** monitoring-enabled graph has 37 successful resource GETs, ten exact scoped roles, 250 matching compared leaves and an ordinary exact-input no-change plan. | Five requested properties are omitted by GET; full requested-body status is `INCOMPLETE`. Storage uses the explicit policy-aligned `Disabled` override, not an accepted private hosted-compute path. |
 | Actual application model client | **PASS:** one local request through the unchanged shared application client returned HTTP 200 for the primary alias on Responses. Api-Key only; at most 32 output tokens, `store=false`, no tools, streaming, redirects or SDK retries. | Not a deployed hosted agent, managed-identity invocation, mini-alias application call, Toolbox or real GitHub operation. This is separate from the four earlier raw-API requests. |
-| Application and container CI | **PASS at `97ecb9b`:** Bicep builds, Bash lifecycle/model-registration checks, 18 application unit tests, unchanged frozen image build and actual container smoke. Smoke covers Terraform exclusion, readiness, both Responses modes and mocked Toolbox initialization/discovery. | Mocks do not establish real tool access or hosted deployment. Local package-download TLS remains unresolved; successful CI proves the image path, not that local issue's cause. |
+| Application and container CI | **PASS at `232e73c`:** Bicep builds, Bash lifecycle/model-registration checks, 18 application unit tests, unchanged frozen image build and actual container smoke. Smoke covers Terraform exclusion, readiness, both Responses modes and mocked Toolbox initialization/discovery. | Mocks do not establish real tool access or hosted deployment. Local package-download TLS remains unresolved; successful CI proves the image path, not that local issue's cause. |
 | Complete Bicep/azd workflow | **Not accepted:** existing Bicep/application/`azure.yaml` defaults are preserved. | ToolServer/Toolbox and explicit credential delivery, automatic Terraform azd integration, hosted agent/routine, intended-identity authorization, governance enforcement and lifecycle gates remain open. |
 
 The adapter now requires Responses support on both selected aliases and rejects
 inconsistent gateway group/ID and agent account/project ID/URL relationships.
-Its version-1 shape and 16-field mapping (17 with gateway location) are unchanged.
+Version-1 compatibility and the 16-field mapping (17 with gateway location)
+remain intact. The tool-access flag is additive contract metadata, not a new
+application environment field.
 Native positive fixtures were corrected to use the configured resource names;
 the checker does not rewrite plan outputs to make them pass. Gateway and registry
 hostname ownership still needs independent provenance, not string syntax alone.
@@ -176,7 +179,7 @@ Links identify the new configuration owner, not a transfer of live acceptance.
 | Token, monthly-cost, optional request-rate and CIDR policies: `model-routing.tf` | API2026 positive/negative policy and CIDR guards | [ai-gateway](../modules/ai-gateway/README.md) | Configuration features retained; offline checks do **not** prove enforcement. Do not equate backend filtering with gateway/MCP content safety. |
 | ApplicationInsights exporter and destination: `monitoring.tf` | API2026 monitoring preconditions and acceptance fixtures | [ai-gateway](../modules/ai-gateway/README.md) | Keep the separately pinned telemetry API and disabled payload capture. Historical delivery was unproven; fresh four-request, expected-component delivery is separately verified above. This does not prove hosted-agent tracing. |
 | Account/project, Storage/ACR, internal roles and support connections: `foundry-agents.tf`, `rbac.tf`, `monitoring.tf` | Infrastructure/configuration acceptance fixtures | [foundry-agents](../modules/foundry-agents/README.md) | Historical support configuration, not image build, hosted-agent operation, tracing delivery or default project-to-gateway authorization. |
-| Opt-in caller and developer grants: `rbac.tf` | Infrastructure caller validation and API2026 lab identity tests | Gateway module owns caller grants; models/agents modules own their developer grants; root supplies inputs | Explicit grants retain narrow scopes. A successful role PUT is not proof of propagation or the intended Foundry identity's runtime authorization. |
+| Opt-in caller and developer grants: `rbac.tf` | Infrastructure caller validation and API2026 lab identity tests | Gateway module owns explicit Models User callers; root owns selected Foundry model/tool grants; models/agents own their developer grants | Explicit grants retain narrow scopes. A successful role PUT is not proof of propagation or the intended Foundry identity's runtime authorization. |
 
 ### Destination offline checks
 
@@ -185,7 +188,7 @@ implementation, not historical wrapper addresses. Its actual test owners are:
 
 | Destination family | Scoped responsibility |
 |---|---|
-| [`root.tftest.hcl`](../tests/root.tftest.hcl) | Default/custom/single-group composition, alias protocol intersection, policy/route/input guards |
+| [`root.tftest.hcl`](../tests/root.tftest.hcl) | Default/custom/single-group composition, alias protocol intersection, policy/route/input guards and independently selected model/tool/monitoring grants |
 | [`gateway.tftest.hcl`](../tests/gateway.tftest.hcl) | Standalone gateway module, nullable frontend, exporter destination and caller guards |
 | [`models.tftest.hcl`](../tests/models.tftest.hcl) | Model module and deployment-profile guards |
 | [`agents.tftest.hcl`](../tests/agents.tftest.hcl) | Independent support module, backend-access/Storage-only controls and optional exact monitoring connection/grants |
@@ -197,8 +200,10 @@ implementation, not historical wrapper addresses. Its actual test owners are:
 The runner also performs locked backend-disabled initialization,
 formatting/validation and PowerShell parsing. These are offline checks only;
 the 41-case extraction, 49-case integration and 53-case monitoring checkpoints
-are distinguished above. The current adapter increment retains 53 native plans,
-checks 13 root handoffs within them and raises the Python suite from 18 to 25.
+are distinguished above. The adapter increment retained 53 native plans,
+checked 13 root handoffs within them and raised the Python suite from 18 to 25.
+The current tools-grant increment adds two native cases, for 55 plans and
+15 root handoffs; the 25 Python tests are unchanged.
 They do not turn source live proof
 into extracted-destination acceptance. The old private/legacy
 scenario suites are not silently included in these families.
@@ -211,7 +216,7 @@ Exclusion from this extraction does not erase historical capability or proof.
 |---|---|
 | Owned private-backend lab, probe VM/UAMIs, private endpoints/DNS, NSG fixtures and private Blob diagnostics | Source optional extensions, not bundled lab automation here. Historical private-backend and Blob allow/deny proof remains valid within that lab. This does not imply gateway private ingress or a running private hosted agent. |
 | Legacy gateway contracts, alternate network profiles, external-network diagnostics and private hosted-agent scenario framework | Deliberately outside this API2026 structural baseline. Source tests for these scenarios must not be relabeled as destination coverage. |
-| Gateway/MCP `contentSafety` | API2026 source rejects unsupported gateway safety input. Backend `Microsoft.DefaultV2` is a different surface, not equivalent MCP/gateway protection or enforcement proof. |
+| Gateway/MCP `contentSafety` | The contribution keeps gateway safety disabled pending selected-API qualification; that local rejection is not proof of service non-support. Backend `Microsoft.DefaultV2` is a different surface, not equivalent MCP/gateway protection or enforcement proof. |
 | RemoteTool, GitHub MCP ToolServer, Toolbox and GitHub credential workflow | RemoteTool is now an opt-in explicit-endpoint configuration, not accepted tool runtime. ToolServer, Toolbox and credential delivery remain missing. No stub resource, token path or implicit personal CLI credential upload is supplied; see the independent contract boundary above. |
 | Terraform-backed azd adapter, hosted image/Responses agent, scheduled routine | Explicit nonsecret environment JSON mapping and bounded local application-client key auth are accepted within the limits above. The shared image builds and passes mocked container smoke in CI. Automatic Terraform azd integration and deployment of the hosted agent/routine remain unimplemented/unaccepted. Existing Bicep/app/`azure.yaml` behavior remains unchanged. Do not run Bicep recovery hooks against Terraform-owned resources. |
 | Controlled failover, policy exhaustion/denial, intended Foundry identity authorization, hosted-agent tracing and rotation/recovery/complete teardown | Unaccepted gates. Fresh key runtime, gateway request telemetry and a no-change foundation plan do not prove them. |

@@ -160,8 +160,10 @@ run "root_default" {
   assert {
     condition = (
       length(azapi_resource.foundry_gateway_model_access) == 0 &&
+      length(azapi_resource.foundry_gateway_tool_access) == 0 &&
       length(azapi_resource.gateway_remote_tool) == 0 &&
       output.deployment_contract.integration.gateway_model_access_enabled == false &&
+      output.deployment_contract.integration.gateway_tool_access_enabled == false &&
       output.deployment_contract.integration.monitoring_enabled == false &&
       output.deployment_contract.integration.insights_connection_id == null &&
       output.deployment_contract.integration.remote_tool_connection_id == null
@@ -214,10 +216,48 @@ run "root_foundry_gateway_model_access" {
   }
 }
 
+run "root_foundry_gateway_tool_access" {
+  command = plan
+  variables { enable_foundry_gateway_tool_access = true }
+  assert {
+    condition = (
+      toset(keys(azapi_resource.foundry_gateway_tool_access)) == toset(["project"]) &&
+      azapi_resource.foundry_gateway_tool_access["project"].parent_id == module.ai_gateway.gateway_id &&
+      azapi_resource.foundry_gateway_tool_access["project"].body.properties.principalId == "00000000-0000-0000-0000-000000000004" &&
+      azapi_resource.foundry_gateway_tool_access["project"].body.properties.principalType == "ServicePrincipal" &&
+      azapi_resource.foundry_gateway_tool_access["project"].body.properties.roleDefinitionId == "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/roleDefinitions/dce03f8d-857f-4e40-a90d-67770fa6ecd2" &&
+      output.deployment_contract.integration.gateway_tool_access_enabled &&
+      !output.deployment_contract.integration.gateway_model_access_enabled &&
+      length(azapi_resource.foundry_gateway_model_access) == 0 &&
+      length(azapi_resource.gateway_remote_tool) == 0
+    )
+    error_message = "The tools opt-in must grant only the project Tools User at gateway scope, without creating model grants or a RemoteTool."
+  }
+}
+
+run "root_tool_access_with_model_caller" {
+  command = plan
+  variables {
+    enable_foundry_gateway_tool_access = true
+    gateway_access_principals = {
+      project = { principal_id = "00000000-0000-0000-0000-000000000004" }
+    }
+  }
+  assert {
+    condition = (
+      length(azapi_resource.foundry_gateway_tool_access) == 1 &&
+      length(azapi_resource.foundry_gateway_model_access) == 0 &&
+      length(azapi_resource.gateway_remote_tool) == 0
+    )
+    error_message = "An explicit Models User caller may share the project principal with the separately owned Tools User grant."
+  }
+}
+
 run "reject_duplicate_foundry_gateway_owners" {
   command = plan
   variables {
     enable_foundry_gateway_model_access = true
+    enable_foundry_gateway_tool_access  = true
     gateway_access_principals = {
       account = { principal_id = "00000000-0000-0000-0000-000000000007" }
       project = { principal_id = "00000000-0000-0000-0000-000000000004" }
@@ -246,6 +286,7 @@ run "root_remote_tool" {
   assert {
     condition = (
       length(azapi_resource.foundry_gateway_model_access) == 0 &&
+      length(azapi_resource.foundry_gateway_tool_access) == 0 &&
       length(azapi_resource.gateway_remote_tool) == 1 &&
       azapi_resource.gateway_remote_tool[0].parent_id == module.foundry_agents.project_id &&
       azapi_resource.gateway_remote_tool[0].body.properties.target == var.gateway_remote_tool_endpoint &&
@@ -280,6 +321,7 @@ run "root_monitoring_integration" {
     condition = (
       output.deployment_contract.integration.monitoring_enabled &&
       length(azapi_resource.foundry_gateway_model_access) == 0 &&
+      length(azapi_resource.foundry_gateway_tool_access) == 0 &&
       length(azapi_resource.gateway_remote_tool) == 0
     )
     error_message = "Monitoring opt-in must reach the support module independently of gateway model or tool access."
@@ -291,13 +333,16 @@ run "root_all_integrations" {
   variables {
     enable_foundry_monitoring_integration = true
     enable_foundry_gateway_model_access   = true
+    enable_foundry_gateway_tool_access    = true
     gateway_remote_tool_endpoint          = "https://gateway.example.invalid/caller-verified-tool-endpoint"
   }
   assert {
     condition = (
       output.deployment_contract.integration.monitoring_enabled &&
       output.deployment_contract.integration.gateway_model_access_enabled &&
+      output.deployment_contract.integration.gateway_tool_access_enabled &&
       length(azapi_resource.foundry_gateway_model_access) == 2 &&
+      length(azapi_resource.foundry_gateway_tool_access) == 1 &&
       length(azapi_resource.gateway_remote_tool) == 1
     )
     error_message = "All explicit integrations must compose without hidden feature coupling or broader ownership."

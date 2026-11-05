@@ -19,6 +19,7 @@ resource "azapi_resource" "gateway_remote_tool" {
     }
   }
   response_export_values = []
+  depends_on             = [azapi_resource.foundry_gateway_tool_access]
   lifecycle {
     precondition {
       condition = !local.gateway_remote_tool_endpoint_valid || try(

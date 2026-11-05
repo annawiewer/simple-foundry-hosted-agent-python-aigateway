@@ -142,7 +142,7 @@ variable "model_deployments" {
     condition = alltrue([
       for model in var.model_deployments : model.content_safety_severity == null
     ])
-    error_message = "The standalone gateway does not support content_safety_severity. Omit it; this entry binds Foundry deployments to the Microsoft.DefaultV2 backend content filter instead."
+    error_message = "Gateway content_safety_severity remains disabled pending qualification at the selected API version. Omit it; Microsoft.DefaultV2 is a backend filter, not equivalent gateway or MCP protection."
   }
   validation {
     condition = alltrue([for model in var.model_deployments :

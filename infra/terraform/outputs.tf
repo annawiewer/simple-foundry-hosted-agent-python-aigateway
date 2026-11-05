@@ -74,6 +74,7 @@ output "deployment_contract" {
     }
     integration = {
       gateway_model_access_enabled = var.enable_foundry_gateway_model_access
+      gateway_tool_access_enabled  = var.enable_foundry_gateway_tool_access
       monitoring_enabled           = var.enable_foundry_monitoring_integration
       insights_connection_id       = module.foundry_agents.monitoring_connection_id
       remote_tool_endpoint         = var.gateway_remote_tool_endpoint

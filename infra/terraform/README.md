@@ -34,8 +34,10 @@ Modules: [ai-gateway](modules/ai-gateway/README.md),
 [foundry-models](modules/foundry-models/README.md),
 [foundry-agents](modules/foundry-agents/README.md).
 
-The root additionally provides **opt-in** Foundry model-access grants, an
-explicit-endpoint RemoteTool reference and a nonsecret JSON environment adapter.
+The root additionally provides **opt-in** Foundry model-access grants, a separate
+project-only tool-access grant, an explicit-endpoint RemoteTool reference and a
+nonsecret JSON environment adapter. A tool role does not create a ToolServer,
+deliver a credential or establish working tool invocation.
 An independent monitoring opt-in changes the existing Insights connection to
 Bicep's managed-identity body in place and adds two resource-scoped publisher
 grants, without creating a second connection owner.

@@ -106,6 +106,7 @@ def check_structure():
         ("foundry_provider", "backend_role_assignment"),
         ("storage_connection", 'role_assignment["project-storage"]'),
         ("registry_connection", 'role_assignment["project-acr-pull"]'),
+        ("gateway_remote_tool", "foundry_gateway_tool_access"),
         ("project_insights_connection", 'role_assignment["monitoring-account"]'),
         ("project_insights_connection", 'role_assignment["monitoring-project"]'),
     ):
@@ -215,7 +216,7 @@ def check_routes(resources, profile):
         require(p["apiFormat"] == model["api_format"] and p["supportedEndpoints"] == model["endpoints"],
                 "Catalog protocol metadata mismatch")
         policies = {p["type"]: p for p in p["policies"]}
-        require("contentSafety" not in policies, "Unsupported API2026 gateway safety must not be silently accepted")
+        require("contentSafety" not in policies, "Unqualified gateway safety must not be silently enabled")
         require(policies["tokenLimit"]["count"] == model["token_limit"] and
                 policies["tokenLimit"]["counterKey"] == ["identity"], "Identity token policy drift")
         for field, kind, value in (("cost_limit", "costLimit", "amount"), ("request_limit", "requestRateLimit", "callsPerPeriod")):
@@ -245,7 +246,8 @@ def check_routes(resources, profile):
     return gateway, properties(provider)["foundry"], backend_grants
 
 
-def check_roles(resources, custom=False, foundry_gateway_access=False, monitoring=False):
+def check_roles(resources, custom=False, foundry_gateway_access=False, monitoring=False,
+                tool_access=False, project_model_caller=False):
     models = resources["module.foundry_models.azapi_resource.models"]
     agents = resources["module.foundry_agents.azapi_resource.agents"]
     project = resources["module.foundry_agents.azapi_resource.project"]
@@ -269,6 +271,10 @@ def check_roles(resources, custom=False, foundry_gateway_access=False, monitorin
             (gateway["id"], identity, "a6b68e3d-a1f0-4c60-8678-237c050cf4ea", "ServicePrincipal")
             for identity in (project_id, agents["identity"][0]["principal_id"])
         }
+    if tool_access:
+        expected.add((gateway["id"], project_id, "dce03f8d-857f-4e40-a90d-67770fa6ecd2", "ServicePrincipal"))
+    if project_model_caller:
+        expected.add((gateway["id"], project_id, "a6b68e3d-a1f0-4c60-8678-237c050cf4ea", "ServicePrincipal"))
     if monitoring:
         insights = resources["module.foundry_agents.azapi_resource.insights"]
         expected |= {
@@ -388,6 +394,7 @@ def check_plans():
     expected |= {"root_foundry_gateway_model_access", "root_remote_tool", "root_both_integrations",
                  "reject_remote_tool_http", "reject_remote_tool_credentials", "reject_remote_tool_query",
                  "reject_remote_tool_origin", "reject_duplicate_foundry_gateway_owners"}
+    expected |= {"root_foundry_gateway_tool_access", "root_tool_access_with_model_caller"}
     expected |= {"agents_monitoring_integration", "root_monitoring_integration",
                  "root_all_integrations", "agent_support_monitoring_integration", "alias_protocol_intersection"}
     require(expected <= plans.keys(), f"Missing real mock plans: {sorted(expected - plans.keys())}")
@@ -402,12 +409,18 @@ def check_plans():
         if name.startswith("root_"):
             gateway = check_gateway(resources)
             monitoring = name in {"root_monitoring_integration", "root_all_integrations"}
+            tool_access = name in {"root_foundry_gateway_tool_access", "root_tool_access_with_model_caller",
+                                   "root_all_integrations"}
             check_agents(resources, name in {"root_remote_tool", "root_both_integrations", "root_all_integrations"},
                          monitoring)
-            check_roles(resources, name == "root_custom",
-                        name in {"root_foundry_gateway_model_access", "root_both_integrations", "root_all_integrations"},
-                        monitoring)
+            check_roles(resources, custom=name == "root_custom",
+                        foundry_gateway_access=name in {"root_foundry_gateway_model_access", "root_both_integrations",
+                                                        "root_all_integrations"},
+                        monitoring=monitoring, tool_access=tool_access,
+                        project_model_caller=name == "root_tool_access_with_model_caller")
             integration = plan["output_changes"]["deployment_contract"]["after"]["integration"]
+            require(integration["gateway_tool_access_enabled"] == tool_access,
+                    "Nonsecret output must describe the actually selected project tool grant")
             require(integration["monitoring_enabled"] == monitoring and
                     (integration["insights_connection_id"] is None if not monitoring else
                      integration["insights_connection_id"] ==
@@ -508,14 +521,22 @@ def check_plans():
             "No successful native Terraform test summary")
     default = resource_map(plans["root_default"])
     require(len(default) == 33, "Optional integration changed the frozen default 33-resource graph")
-    for run, additions in (("root_foundry_gateway_model_access", 2), ("root_remote_tool", 1),
+    for run, additions in (("root_foundry_gateway_model_access", 2), ("root_foundry_gateway_tool_access", 1),
+                           ("root_remote_tool", 1),
                            ("root_both_integrations", 3)):
         resources = resource_map(plans[run])
         added = set(resources) - set(default)
         require(len(resources) == 33 + additions and len(added) == additions and
                 all(address.startswith(("azapi_resource.foundry_gateway_model_access[",
+                                        "azapi_resource.foundry_gateway_tool_access[",
                                         "azapi_resource.gateway_remote_tool[")) for address in added),
                 f"{run}: integration must add only root-owned selected resources")
+    tool_callers = resource_map(plans["root_tool_access_with_model_caller"])
+    require(set(tool_callers) - set(default) == {
+                'azapi_resource.foundry_gateway_tool_access["project"]',
+                'module.ai_gateway.azapi_resource.role_assignment["gateway-models-user-project"]',
+            } and not set(default) - set(tool_callers),
+            "Distinct project model/tool roles must coexist without duplicate ownership or unrelated resources")
     for run, baseline, prefix in (
         ("agents_monitoring_integration", "agents_module", ""),
         ("agent_support_monitoring_integration", "agent_support_only", "module.component."),
@@ -528,9 +549,11 @@ def check_plans():
             'azapi_resource.role_assignment["monitoring-account"]',
             'azapi_resource.role_assignment["monitoring-project"]',
         )}
+        if run == "root_all_integrations":
+            expected_added.add('azapi_resource.foundry_gateway_tool_access["project"]')
         require(set(resources) - set(retained) == expected_added and
                 not set(retained) - set(resources),
-                f"{run}: monitoring must add only two module-owned roles; preserve every existing connection address")
+                f"{run}: only the selected monitoring/tool grants may be added; preserve every existing connection address")
     spec = importlib.util.spec_from_file_location("export_environment", ROOT / "scripts" / "export_environment.py")
     adapter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adapter)

@@ -144,10 +144,21 @@ independence of the three child modules:
   resource references avoid a sibling-module cycle. Do not select the same
   identities again in `gateway_access_principals`; a precondition rejects
   duplicate ownership. Role creation does not prove runtime authorization.
+- `enable_foundry_gateway_tool_access = true` adds one root-owned Tools User
+  assignment at the exact gateway scope, for the **project identity only**.
+  It is independent of model access and the RemoteTool endpoint, and is off by
+  default. It neither broadens the account/developer grants nor substitutes the
+  broader AI Gateway User role. `gateway_access_principals` remains Models
+  User-only, so using that map for the same project is not duplicate ownership
+  of this different role. A selected RemoteTool waits for the optional tools
+  grant; that dependency is not proof of RBAC propagation. See the
+  [role-definition qualification](tool-credential-boundary.md#tool-role-qualification).
 - `gateway_remote_tool_endpoint = null` creates no connection. An explicitly
   selected credential-free HTTPS endpoint on this deployed gateway creates the
   root-owned `aigw-github` project connection, independently of model access.
-  Supply a separately established runtime URL: no MCP path is inferred.
+  Supply the independently qualified service-returned runtime URL (the published
+  ToolServer contract exposes `gatewayEndpoints[].url` for `api = "mcp"`).
+  No MCP path is inferred and selecting an endpoint does not enable a role.
   The connection uses upstream `RemoteTool`/`ProjectManagedIdentity`, audience
   `https://azure-api.net/aigateway`, `custom_MCP` metadata and project sharing.
   Its separately pinned `2025-06-01` connection API disables provider schema
@@ -177,8 +188,10 @@ credential erasure, identical Bicep topology, Entra-only ingestion or hosted-age
 tracing. Root contract metadata exposes only the selected flag and nullable real
 project connection ID.
 Monitoring alone gives 35 resources/eight roles; with model access, 37/ten;
-with the explicit RemoteTool as well, 38/ten. No network, Insights local-auth,
-application or Bicep configuration is changed.
+with the explicit RemoteTool as well, 38/ten. The independent project tool grant
+adds one resource/role: all four opt-ins together give 39/eleven. These are
+configuration counts, not an assertion that the all-options graph was deployed.
+No network, Insights local-auth, application or Bicep configuration is changed.
 
 The [explicit adapter](../scripts/export_environment.py) accepts either a
 nonsecret `deployment_contract` version-1 object or a `terraform output -json`
@@ -215,10 +228,11 @@ The mapping supplies established infrastructure IDs, locations, groups,
 project/registry endpoints, gateway origin and aliases, **not secrets,
 GitHub repository/credentials, Toolbox values or runtime readiness**. Do not
 export state as adapter input. The existing app's managed-identity path remains
-an acceptance gate. Its inherited key path uses `Api-Key`, whereas the bounded
-fresh key probes used `Authorization: Bearer`; exporting nonsecret settings
-does not fix or accept that key-auth integration. No app/Bicep/`azure.yaml`
-behavior is changed here.
+an acceptance gate. Its inherited key path uses `Api-Key`; one bounded actual
+application-client request subsequently passed with that header, separately from
+the earlier raw `Authorization: Bearer` probes. Exporting settings alone proves
+neither result. See the [current evidence](evidence-map.md#current-acceptance-november-5-2026).
+No app/Bicep/`azure.yaml` behavior is changed here.
 
 The November 5 (CET) increment applied only the two opt-in model-access roles:
 zero existing resources changed or destroyed, all 35 resources/eight scoped
@@ -247,10 +261,12 @@ the adapter nor a role/connection PUT constitutes full application acceptance.
 - Deployment operations serialize per account. Storage/ACR connections wait
   for their actual grants; no whole-module dependency or provisioner hides
   ordering.
-- Backend deployments bind `Microsoft.DefaultV2`. Unsupported gateway
-  `content_safety_severity` is rejected. This is not equivalent to upstream
-  gateway/MCP safety. Configured token/cost/request/IP controls and failover
-  routes are retained, but enforcement/failover remain unproven.
+- Backend deployments bind `Microsoft.DefaultV2`. Gateway
+  `content_safety_severity` remains rejected pending qualification of the
+  selected API; this is a local gate, not evidence of service non-support.
+  Backend filtering is not equivalent to upstream gateway/MCP safety.
+  Configured token/cost/request/IP controls and failover routes are retained,
+  but enforcement/failover remain unproven.
 - Agent AppInsights uses a project-local, unshared ApiKey connection; registry
   connection is unshared. Upstream monitoring publisher/auth/sharing topology
   is not silently claimed equivalent.
@@ -258,6 +274,28 @@ the adapter nor a role/connection PUT constitutes full application acceptance.
   substitution or telemetry redesign is introduced. Fresh gateway request
   delivery was verified for four exact traces and the expected component;
   hosted-agent tracing remains unproven.
+
+### Declared parity differences
+
+These differences are explicit, not automatically corrected by enabling
+application integration. Existing deployed settings must not be flipped merely
+to make resource bodies look identical.
+
+| Surface | Bicep path | Terraform path and remaining decision |
+|---|---|---|
+| Gateway API | Core resources and hook use `2025-09-01-preview`. | Core remains `2026-09-01-preview`; the newer published ToolServer body is not interchangeable. Qualify writes before changing versions. |
+| Gateway/model/MCP safety | Medium gateway safety categories are requested. | Gateway safety is not enabled pending qualification. The backend `Microsoft.DefaultV2` binding is not equivalent protection. |
+| Backend safety selection | No explicit `raiPolicyName`. | Explicit `Microsoft.DefaultV2` pin retained; the effective Bicep backend default is not assumed from omission. |
+| Model request rate | No request-rate policy by default. | Bundled profile requests 100 calls/minute per identity. An explicit replacement profile can omit the optional limit; no default is silently changed and enforcement remains unaccepted. |
+| Model account project management | `allowProjectManagement = false`. | `true` retained. Safe in-place mutation is not established; no live flip is included. |
+| Registry connection sharing | `isSharedToAll = true`. | `false` retained. Cross-project semantics and hosted image-pull behavior remain unaccepted. |
+| Insights connection | Account-level managed-identity connection. | One project-level owner; optional managed-identity body and publisher grants. Mirrored GET observations do not justify adding another Terraform owner. |
+| Gateway tool authorization | Broader AI Gateway User grants include tool access. | Existing Models User grants remain; a separate default-off Tools User grant targets only the project. Definition availability is qualified, not assignment propagation or tool invocation. |
+| Tool and credential lifecycle | Existing hook selects a local GitHub credential and owns ToolServer/Toolbox work. | No implicit credential selection or overlapping writer. A separately reviewed whole-resource runner remains required. |
+
+The [tool contract boundary](tool-credential-boundary.md) records source and
+acceptance limits. These are unresolved parity choices, not equivalent-behavior
+claims.
 
 Do not run existing Bicep cleanup/recovery hooks against these Terraform-owned
 resources. Migration, credential rotation, interrupted deployment recovery and

@@ -16,7 +16,8 @@ module does **not** enforce gateway token/cost/request limits.
 
 The account disables local authentication and enables project management.
 Deployments serialize through an account-scoped AzAPI operation lock and bind
-`Microsoft.DefaultV2`; unsupported gateway content-safety input is rejected.
+`Microsoft.DefaultV2`. Gateway routing keeps its content-safety input disabled
+pending selected-API qualification, not a proven service limitation.
 The operation lock is not a remote state/concurrent-writer lock. Backend filter
 configuration is not enforcement proof or gateway/MCP filtering.
 
