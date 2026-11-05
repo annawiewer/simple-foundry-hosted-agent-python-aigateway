@@ -37,6 +37,34 @@ run "gateway_module" {
     condition     = output.gateway_endpoint == "https://gateway.example.invalid" && length(output.model_alias_configuration) == 0
     error_message = "The standalone gateway scaffold must expose only its returned frontend and no fabricated aliases."
   }
+  assert {
+    condition = (
+      output.gateway_monitoring.kind == "openTelemetry" &&
+      output.gateway_monitoring.configuration_status == "pending" &&
+      output.gateway_monitoring.exporter_id == null &&
+      output.gateway_monitoring.data_collection_rule_id == null &&
+      length(azapi_resource.telemetry_exporter) == 0 &&
+      length(azapi_resource.telemetry_publisher) == 0
+    )
+    error_message = "Stage one must request native ingestion but neither fake readiness nor create an incomplete exporter or DCR grant."
+  }
+}
+
+run "gateway_legacy_telemetry" {
+  command = plan
+  module { source = "./modules/ai-gateway" }
+  variables { telemetry_mode = "ApplicationInsights" }
+  assert {
+    condition = (
+      azapi_resource.insights.body.properties.IngestionMode == "LogAnalytics" &&
+      !can(azapi_resource.insights.body.properties.AzureMonitorWorkspaceIngestionMode) &&
+      output.gateway_monitoring.configuration_status == "legacy" &&
+      azapi_resource.telemetry_exporter[0].name == "appinsights" &&
+      azapi_resource.telemetry_exporter[0].body.properties.kind == "ApplicationInsights" &&
+      length(azapi_resource.telemetry_publisher) == 0
+    )
+    error_message = "Explicit compatibility mode must retain the legacy exporter name/body without enabling native managed ingestion or DCR access."
+  }
 }
 
 run "nullable_frontend_no_legacy_fallback" {
@@ -59,6 +87,7 @@ run "nullable_frontend_no_legacy_fallback" {
 run "missing_insights_destination" {
   command = plan
   module { source = "./modules/ai-gateway" }
+  variables { telemetry_mode = "ApplicationInsights" }
   override_resource {
     target          = azapi_resource.insights
     override_during = plan

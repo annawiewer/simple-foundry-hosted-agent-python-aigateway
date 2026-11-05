@@ -93,6 +93,42 @@ variable "monitoring_public_network_access" {
     error_message = "Use null, Enabled or Disabled."
   }
 }
+variable "telemetry_mode" {
+  description = "OpenTelemetry enables managed ingestion and waits for an explicit native_telemetry handoff. ApplicationInsights is an explicit legacy compatibility mode, not a native dashboard integration."
+  type        = string
+  default     = "OpenTelemetry"
+  nullable    = false
+  validation {
+    condition     = contains(["OpenTelemetry", "ApplicationInsights"], var.telemetry_mode)
+    error_message = "Use OpenTelemetry or the explicit ApplicationInsights legacy mode."
+  }
+}
+variable "native_telemetry" {
+  description = "Nonsecret service-returned readiness handoff. Null leaves native export pending. The second stage rechecks Insights before granting DCR access or configuring the exporter."
+  type = object({
+    version                 = number
+    gateway_id              = string
+    gateway_principal_id    = string
+    insights_id             = string
+    log_analytics_id        = string
+    data_collection_rule_id = string
+    metrics_endpoint        = string
+    logs_endpoint           = string
+    traces_endpoint         = string
+  })
+  default = null
+  validation {
+    condition = var.native_telemetry == null ? true : try(
+      var.telemetry_mode == "OpenTelemetry" && var.native_telemetry.version == 1 &&
+      can(regex("(?i)^/subscriptions/${var.subscription_id}/resourceGroups/[a-z0-9_.()-]+/providers/Microsoft\\.Insights/dataCollectionRules/[a-z0-9_.()-]+$", var.native_telemetry.data_collection_rule_id)) &&
+      alltrue([for endpoint in [
+        var.native_telemetry.metrics_endpoint, var.native_telemetry.logs_endpoint, var.native_telemetry.traces_endpoint
+      ] : can(regex("^https://[A-Za-z0-9][A-Za-z0-9.-]*(?::443)?(/[^?#\\\\[:space:][:cntrl:]]*)?(\\?api-version=[0-9]{4}-[0-9]{2}-[0-9]{2}(-preview)?)?$", endpoint))]),
+      false
+    )
+    error_message = "Native telemetry requires OpenTelemetry mode, handoff version 1, a same-subscription DCR and credential-free HTTPS endpoints (only an optional api-version query is accepted)."
+  }
+}
 variable "model_deployments" {
   description = "Foundry deployments keyed by ARM-safe deployment name. Select model versions, deployment SKUs, and quota available to your subscription."
   type = map(object({

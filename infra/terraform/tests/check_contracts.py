@@ -99,6 +99,13 @@ def check_structure():
     require(len(gateway) == 1, "Exactly one gateway resource definition required")
     require(re.search(r'\bprevent_destroy\s*=\s*true', gateway[0][1]),
             "Gateway destructive-change guard missing")
+    exporters = [b for _, n, b in resources if n == ["azapi_resource", "telemetry_exporter"]]
+    require(len(exporters) == 1 and re.search(r'\bprevent_destroy\s*=\s*true', exporters[0]),
+            "The sole exporter must block deletion and immutable-kind replacement")
+    moves = [b for _, _, b in source_blocks("moved")]
+    require(any(re.search(r'\bfrom\s*=\s*azapi_resource\.telemetry_exporter\s*\n', b) and
+                re.search(r'\bto\s*=\s*azapi_resource\.telemetry_exporter\[0\]', b) for b in moves),
+            "The legacy exporter address must move to its counted instance without state surgery")
     deployments = [b for _, n, b in resources if n == ["azapi_resource", "model_deployment"]]
     require(len(deployments) == 1 and re.search(r'\blocks\s*=\s*\[[^\]]*azapi_resource\.models\.id', deployments[0]),
             "Model operations must serialize on their owning account")
@@ -109,6 +116,7 @@ def check_structure():
         ("gateway_remote_tool", "foundry_gateway_tool_access"),
         ("project_insights_connection", 'role_assignment["monitoring-account"]'),
         ("project_insights_connection", 'role_assignment["monitoring-project"]'),
+        ("telemetry_exporter", "telemetry_publisher"),
     ):
         matches = [b for _, n, b in resources if n == ["azapi_resource", name]]
         require(len(matches) == 1, f"Missing sole {name} resource")
@@ -161,8 +169,11 @@ def one(resources, type_name):
     return next(iter(selected.values()))
 
 
-def check_gateway(resources):
+def check_gateway(resources, telemetry="pending"):
     gateway = one(resources, f"{GATEWAY}@{API}")
+    prefix = next(address for address in of_type(resources, f"{GATEWAY}@{API}")).removesuffix("azapi_resource.gateway")
+    insights = resources[prefix + "azapi_resource.insights"]
+    logs = resources[prefix + "azapi_resource.logs"]
     require("sku" not in gateway["body"] and "publicNetworkAccess" not in properties(gateway),
             "Standalone gateway must not inherit legacy SKU or private-ingress claim")
     require(gateway["create_headers"] == {"If-None-Match": "*"} and
@@ -170,13 +181,56 @@ def check_gateway(resources):
     runtime_key = one(resources, f"{GATEWAY}/apiKeys@{API}")
     require(runtime_key["parent_id"] == gateway["id"], "Runtime key parent mismatch")
     require("key" not in properties(runtime_key), "Runtime key value must not be a fixture/output")
-    exporter = one(resources, f"{GATEWAY}/workspaces/telemetryExporters@2025-09-01-preview")
+    require(properties(insights)["WorkspaceResourceId"] == logs["id"], "Gateway Insights workspace mismatch")
+    publishers = [r for address, r in of_type(resources, "Microsoft.Authorization/roleAssignments@2022-04-01").items()
+                  if address.startswith(prefix) and properties(r)["roleDefinitionId"].endswith("3913510d-42f4-4e42-8a64-420c390055eb")]
+    if telemetry == "legacy":
+        require(properties(insights).get("IngestionMode") == "LogAnalytics" and
+                "AzureMonitorWorkspaceIngestionMode" not in properties(insights),
+                "Legacy compatibility must not enable managed native ingestion")
+    else:
+        require(properties(insights).get("AzureMonitorWorkspaceIngestionMode") == "Enabled" and
+                "IngestionMode" not in properties(insights) and insights["response_export_values"] == {
+                    "insights_id": "id",
+                    "managed_ingestion": "properties.AzureMonitorWorkspaceIngestionMode",
+                    "log_analytics_id": "properties.WorkspaceResourceId",
+                    "data_collection_rule_id": "properties.DefaultDataCollectionRuleResourceId || properties.DataCollectionRuleResourceId",
+                    "metrics_endpoint": "properties.MetricsIngestionEndpoint || properties.OTLPMetricsEndpoint",
+                    "logs_endpoint": "properties.LogsIngestionEndpoint || properties.OTLPLogsEndpoint",
+                    "traces_endpoint": "properties.TracesIngestionEndpoint || properties.OTLPTracesEndpoint",
+                },
+                "Native managed ingestion must not retain the legacy mode or export its connection string")
+    if telemetry == "pending":
+        require(not of_type(resources, f"{GATEWAY}/workspaces/telemetryExporters@{API}") and not publishers,
+                "Pending telemetry must not create an exporter or a guessed publisher scope")
+        return gateway
+    exporter = one(resources, f"{GATEWAY}/workspaces/telemetryExporters@{API}")
     p = properties(exporter)
-    require(p["kind"] == "ApplicationInsights" and p["payloadCapture"] is False and "openTelemetry" not in p,
-            "Retain the legacy exporter until native OpenTelemetry is implemented")
-    require(p["applicationInsights"]["connectionString"] == "synthetic-only-not-a-credential",
-            "Exporter must use selected monitoring destination")
-    require(exporter["parent_id"] == gateway["id"] + "/workspaces/default", "Exporter workspace mismatch")
+    require(exporter["name"] == "appinsights" and exporter["replace_triggers_refs"] == ["properties.kind"] and
+            exporter["parent_id"] == gateway["id"] + "/workspaces/default" and p["payloadCapture"] is False,
+            "Exporter ownership, immutable kind guard, workspace or payload-capture boundary changed")
+    require(p["applicationInsights"]["resourceId"] == insights["id"], "Exporter Insights target mismatch")
+    if telemetry == "legacy":
+        require(p["kind"] == "ApplicationInsights" and "openTelemetry" not in p and not publishers and
+                p["applicationInsights"]["connectionString"] == "synthetic-only-not-a-credential",
+                "Explicit legacy export must retain its selected connection-string destination without DCR access")
+    else:
+        returned = insights["output"]
+        require(returned["insights_id"] == insights["id"] and
+                returned["log_analytics_id"] == logs["id"], "Native readback must refer to the owned Insights/workspace")
+        require(p["kind"] == "OpenTelemetry" and p["applicationInsights"] == {"resourceId": insights["id"]} and
+                p["openTelemetry"] == {
+                    "metricsEndpoint": returned["metrics_endpoint"],
+                    "logsEndpoint": returned["logs_endpoint"],
+                    "tracesEndpoint": returned["traces_endpoint"],
+                    "credentials": {"managedIdentity": {"resource": "https://monitor.azure.com"}},
+                }, "Native exporter must use exactly the service-returned endpoints and monitor audience")
+        require(len(publishers) == 1 and publishers[0]["parent_id"] == returned["data_collection_rule_id"] and
+                properties(publishers[0]) == {
+                    "principalId": gateway["identity"][0]["principal_id"], "principalType": "ServicePrincipal",
+                    "roleDefinitionId": "/subscriptions/" + gateway["id"].split("/")[2] +
+                    "/providers/Microsoft.Authorization/roleDefinitions/3913510d-42f4-4e42-8a64-420c390055eb",
+                }, "Native publishing must be a sole direct role for the gateway identity at the returned DCR only")
     return gateway
 
 
@@ -247,7 +301,7 @@ def check_routes(resources, profile):
 
 
 def check_roles(resources, custom=False, foundry_gateway_access=False, monitoring=False,
-                tool_access=False, project_model_caller=False):
+                tool_access=False, project_model_caller=False, native_dcr_id=None):
     models = resources["module.foundry_models.azapi_resource.models"]
     agents = resources["module.foundry_agents.azapi_resource.agents"]
     project = resources["module.foundry_agents.azapi_resource.project"]
@@ -281,6 +335,9 @@ def check_roles(resources, custom=False, foundry_gateway_access=False, monitorin
             (insights["id"], identity, "3913510d-42f4-4e42-8a64-420c390055eb", "ServicePrincipal")
             for identity in (project_id, agents["identity"][0]["principal_id"])
         }
+    if native_dcr_id is not None:
+        expected.add((native_dcr_id, gateway["identity"][0]["principal_id"],
+                      "3913510d-42f4-4e42-8a64-420c390055eb", "ServicePrincipal"))
     if custom:
         developer = "00000000-0000-0000-0000-000000000005"
         expected |= {(scope, developer, role, "Group") for scope in (models["id"], agents["id"]) for role in cognitive}
@@ -352,8 +409,10 @@ def check_agents(resources, remote_tool=False, monitoring=False, shared_registry
         else:
             require(p["authType"] == "AAD", "Storage connection must remain AAD")
     account_connections = of_type(resources, "Microsoft.CognitiveServices/accounts/connections@2025-06-01")
-    publishers = [r for r in of_type(resources, "Microsoft.Authorization/roleAssignments@2022-04-01").values()
-                  if properties(r)["roleDefinitionId"].endswith("3913510d-42f4-4e42-8a64-420c390055eb")]
+    prefix = next(address for address in
+                  of_type(resources, "Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview")).removesuffix("azapi_resource.project")
+    publishers = [r for address, r in of_type(resources, "Microsoft.Authorization/roleAssignments@2022-04-01").items()
+                  if address.startswith(prefix) and properties(r)["roleDefinitionId"].endswith("3913510d-42f4-4e42-8a64-420c390055eb")]
     if monitoring:
         require(not account_connections and len(publishers) == 2,
                 "Monitoring must retain one project Terraform owner and add exactly two publisher grants")
@@ -401,6 +460,12 @@ def check_plans():
     expected |= {"root_foundry_gateway_tool_access", "root_tool_access_with_model_caller"}
     expected |= {"agents_monitoring_integration", "root_monitoring_integration",
                  "root_all_integrations", "agent_support_monitoring_integration", "alias_protocol_intersection"}
+    native_ready = {"native_telemetry_ready", "root_native_telemetry", "gateway_only_native", "existing_models_native"}
+    legacy = {"gateway_legacy_telemetry", "root_legacy_telemetry"}
+    expected |= native_ready | legacy | {
+        "reject_native_handoff_identity", "reject_stale_native_endpoints", "reject_unready_native_readback",
+        "reject_cross_subscription_native_dcr", "reject_credential_native_endpoint", "reject_legacy_with_native_handoff",
+    }
     require(expected <= plans.keys(), f"Missing real mock plans: {sorted(expected - plans.keys())}")
     profile = json.loads((ROOT / "model-profile.json").read_text(encoding="utf-8-sig"))
     # Native test_plan messages omit input variables: keep an independent scenario oracle.
@@ -416,20 +481,23 @@ def check_plans():
     }
     for name, plan in plans.items():
         resources = resource_map(plan)
+        telemetry = "native" if name in native_ready else "legacy" if name in legacy else "pending"
         require(not any("/toolServers@" in r.get("type", "") for r in resources.values()), "ToolServer ownership not in this increment")
         accounts = of_type(resources, "Microsoft.CognitiveServices/accounts@2025-04-01-preview")
         for account in accounts.values():
             require(properties(account)["allowProjectManagement"] is True and properties(account)["disableLocalAuth"] is True,
                     f"{name}: account project management/local auth drift")
         if name.startswith("root_"):
-            gateway = check_gateway(resources)
+            gateway = check_gateway(resources, telemetry)
             model_access, tool_access, monitoring, shared_registry = root_settings.get(name, (True, True, True, True))
             check_agents(resources, name in {"root_remote_tool", "root_both_integrations", "root_all_integrations"},
                          monitoring, shared_registry)
             check_roles(resources, custom=name == "root_custom",
                         foundry_gateway_access=model_access,
                         monitoring=monitoring, tool_access=tool_access,
-                        project_model_caller=name == "root_tool_access_with_model_caller")
+                        project_model_caller=name == "root_tool_access_with_model_caller",
+                        native_dcr_id=(resources["module.ai_gateway.azapi_resource.insights"]["output"]["data_collection_rule_id"]
+                                       if name in native_ready else None))
             integration = plan["output_changes"]["deployment_contract"]["after"]["integration"]
             require(integration["gateway_model_access_enabled"] == model_access and
                     integration["gateway_tool_access_enabled"] == tool_access and
@@ -490,8 +558,8 @@ def check_plans():
                     for flag in ("publicNetworkAccessForIngestion", "publicNetworkAccessForQuery"):
                         require((p.get(flag) == "Disabled") if name == "root_disabled_backends" else flag not in p,
                                 "Monitoring must preserve unspecified defaults or explicit disablement")
-        elif name in {"gateway_module", "gateway_only"}:
-            check_gateway(resources)
+        elif name in {"gateway_module", "gateway_only", "gateway_only_native", "native_telemetry_ready", "gateway_legacy_telemetry"}:
+            check_gateway(resources, telemetry)
             require(not accounts and not any("Microsoft.CognitiveServices/" in r.get("type", "") for r in resources.values()),
                     "Gateway-only must not own models, projects or agents")
             require(not any("/modelProviders" in r.get("type", "") or "/aliases@" in r.get("type", "")
@@ -513,7 +581,7 @@ def check_plans():
             require(not any(properties(r).get("publicNetworkAccess") == "Private" for r in resources.values()),
                     "Rejected Storage enum reached a resource plan")
         elif name.startswith("existing_models"):
-            gateway = check_gateway(resources)
+            gateway = check_gateway(resources, telemetry)
             require(not accounts and not of_type(resources, "Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview"),
                     "Referencing existing models must not adopt/create the account or deployments")
             grants = [r for r in of_type(resources, "Microsoft.Authorization/roleAssignments@2022-04-01").values()
@@ -535,8 +603,16 @@ def check_plans():
             "No successful native Terraform test summary")
     default = resource_map(plans["root_default"])
     minimal = resource_map(plans["root_minimal"])
-    require(len(minimal) == 33 and len(default) == 38,
-            "The application root must add five scoped grants to the retained 33-resource minimal graph")
+    require(len(minimal) == 32 and len(default) == 37,
+            "Native stage one defers the exporter; the full root still adds exactly five grants to the minimal graph")
+    ready = resource_map(plans["root_native_telemetry"])
+    legacy_resources = resource_map(plans["root_legacy_telemetry"])
+    require(set(ready) - set(default) == {
+                "module.ai_gateway.azapi_resource.telemetry_exporter[0]",
+                "module.ai_gateway.azapi_resource.telemetry_publisher[0]",
+            } and not set(default) - set(ready), "Native stage two must add only the exporter and direct DCR publisher")
+    require(set(legacy_resources) - set(default) == {"module.ai_gateway.azapi_resource.telemetry_exporter[0]"} and
+            not set(default) - set(legacy_resources), "Legacy compatibility must retain the exporter without DCR ownership")
     require(set(default) - set(minimal) == {
                 'azapi_resource.foundry_gateway_model_access["account"]',
                 'azapi_resource.foundry_gateway_model_access["project"]',
@@ -550,7 +626,7 @@ def check_plans():
                            ("root_both_integrations", 3)):
         resources = resource_map(plans[run])
         added = set(resources) - set(minimal)
-        require(len(resources) == 33 + additions and len(added) == additions and
+        require(len(resources) == 32 + additions and len(added) == additions and
                 all(address.startswith(("azapi_resource.foundry_gateway_model_access[",
                                         "azapi_resource.foundry_gateway_tool_access[",
                                         "azapi_resource.gateway_remote_tool[")) for address in added),
@@ -581,6 +657,26 @@ def check_plans():
     spec = importlib.util.spec_from_file_location("export_environment", ROOT / "scripts" / "export_environment.py")
     adapter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adapter)
+    spec = importlib.util.spec_from_file_location("wait_for_telemetry", ROOT / "scripts" / "wait_for_telemetry.py")
+    readiness_helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(readiness_helper)
+    for name in native_ready | {"root_default", "root_legacy_telemetry"}:
+        plan = plans[name]
+        outputs = plan["output_changes"]
+        bootstrap = outputs["gateway_telemetry_bootstrap"]["after"]
+        monitoring = outputs["gateway_monitoring"]["after"]
+        resources = resource_map(plan)
+        gateway = one(resources, f"{GATEWAY}@{API}")
+        require(bootstrap["gateway_id"] == gateway["id"] and
+                bootstrap["gateway_principal_id"] == gateway["identity"][0]["principal_id"] and
+                bootstrap["insights_id"] == monitoring["insights_id"] and
+                bootstrap["log_analytics_id"] == monitoring["log_analytics_id"],
+                f"{name}: bootstrap must describe the actual graph, not unrelated resources")
+        if name != "root_legacy_telemetry":
+            readiness_helper.validate_bootstrap(bootstrap, bootstrap["subscription_id"])
+        require(monitoring["configuration_status"] ==
+                ("configured" if name in native_ready else "legacy" if name in legacy else "pending"),
+                f"{name}: monitoring output must distinguish pending, configured and legacy")
     application_plans = {name: plan for name, plan in plans.items()
                          if name.startswith("root_") or name == "alias_protocol_intersection"}
     for name, plan in application_plans.items():

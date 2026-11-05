@@ -53,6 +53,8 @@ module "ai_gateway" {
   model_allowed_client_cidrs       = var.model_allowed_client_cidrs
   gateway_access_principals        = var.gateway_access_principals
   monitoring_public_network_access = var.standalone_backend_public_network_access
+  telemetry_mode                   = var.gateway_telemetry_mode
+  native_telemetry                 = var.gateway_native_telemetry
 }
 module "foundry_agents" {
   source                           = "./modules/foundry-agents"

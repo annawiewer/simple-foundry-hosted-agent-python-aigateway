@@ -45,6 +45,28 @@ variable "gateway_location" {
   }
 }
 
+variable "gateway_telemetry_mode" {
+  description = "OpenTelemetry uses two explicit Terraform stages. Existing legacy exporters require ApplicationInsights compatibility mode until a separately reviewed migration."
+  type        = string
+  default     = "OpenTelemetry"
+  nullable    = false
+}
+variable "gateway_native_telemetry" {
+  description = "Nonsecret readiness-helper handoff for the second stage; null leaves native gateway telemetry pending."
+  type = object({
+    version                 = number
+    gateway_id              = string
+    gateway_principal_id    = string
+    insights_id             = string
+    log_analytics_id        = string
+    data_collection_rule_id = string
+    metrics_endpoint        = string
+    logs_endpoint           = string
+    traces_endpoint         = string
+  })
+  default = null
+}
+
 variable "enable_foundry_gateway_model_access" {
   description = "Create root-owned AI Gateway Models User grants for both Foundry account and project identities at exact gateway scope. Enabled for the application root; set false to omit. Does not configure tools or prove runtime authentication."
   type        = bool

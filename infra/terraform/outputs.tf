@@ -4,6 +4,7 @@ output "gateway_endpoint" { value = module.ai_gateway.gateway_endpoint }
 output "gateway_api_key_id" { value = module.ai_gateway.gateway_api_key_id }
 output "gateway_api_versions" { value = module.ai_gateway.gateway_api_versions }
 output "gateway_monitoring" { value = module.ai_gateway.gateway_monitoring }
+output "gateway_telemetry_bootstrap" { value = module.ai_gateway.gateway_telemetry_bootstrap }
 output "gateway_contract" {
   value = {
     name                  = "2026"
@@ -85,6 +86,7 @@ output "deployment_contract" {
     lifecycle_owner = "Terraform infrastructure and selected connection/grants only; credentials, tool provisioning and application lifecycle remain external"
     deferred_integrations = concat(
       var.gateway_remote_tool_endpoint == null ? ["RemoteTool"] : [],
+      module.ai_gateway.gateway_monitoring.configuration_status == "pending" ? ["native gateway telemetry readiness"] : [],
       ["ToolServer", "Toolbox", "azd deployment integration", "hosted application", "routine", "runtime identity authentication verification"]
     )
   }

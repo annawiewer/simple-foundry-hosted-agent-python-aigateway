@@ -155,5 +155,6 @@ Thumbs.db
 *.tfplan.json
 terraform.tfvars
 terraform.tfvars.json
+*.tfvars.json
 *.auto.tfvars
 *.auto.tfvars.json

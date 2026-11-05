@@ -1,7 +1,8 @@
 # ai-gateway
 
 Standalone AI Gateway (`2025-09-01-preview`), system identity, service-owned default workspace,
-runtime-key **resource**, Log Analytics/ApplicationInsights and exporter. The
+runtime-key **resource**, Log Analytics/Application Insights and staged native
+telemetry. The
 module never reads or exports the runtime key value.
 
 Use [gateway-only](../../examples/gateway-only/README.md) for a scaffold or
@@ -49,11 +50,20 @@ Other options: `gateway_access_principals` (explicit gateway model callers),
 (external delegated outbound subnet, not ingress), and
 `monitoring_public_network_access`.
 
+`telemetry_mode` defaults to `OpenTelemetry`; null `native_telemetry` enables
+managed ingestion but leaves the DCR grant/exporter absent and status `pending`.
+The [two-stage guide](../../docs/native-telemetry.md) covers the GET-only helper,
+fresh second-stage plan and retained nonsecret handoff. The module checks the
+owned Insights refresh and actual gateway identity before granting publisher
+access at the returned DCR only. Explicit `ApplicationInsights` selects legacy
+compatibility, not a native migration.
+
 Outputs: gateway ID/endpoint/principal/workspace, key-resource ID, exact API
-versions, monitoring IDs/kind and model/alias API metadata. See
+versions, monitoring IDs/kind/configuration status, `gateway_telemetry_bootstrap`
+and model/alias API metadata. See
 [`outputs.tf`](outputs.tf).
 
-Gateway deletion is guarded by `prevent_destroy`. Policy configuration is not
+Gateway and exporter deletion are guarded by `prevent_destroy`. Policy configuration is not
 enforcement; backend filtering is not gateway/MCP safety; exporter configuration
 is not delivery. No ToolServer, Toolbox, RemoteTool, application or credential
 runner is included. See [ownership/preparation](../../docs/architecture.md) and

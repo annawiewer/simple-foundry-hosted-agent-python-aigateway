@@ -20,5 +20,7 @@ module "component" {
   tags              = local.tags
 
   monitoring_location = var.location
+  telemetry_mode      = var.gateway_telemetry_mode
+  native_telemetry    = var.gateway_native_telemetry
 
 }

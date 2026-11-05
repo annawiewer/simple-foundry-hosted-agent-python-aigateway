@@ -38,7 +38,12 @@ before planning an upgrade.
 
 A tool role does not create a ToolServer, deliver a credential or establish
 working invocation. The RemoteTool still requires an explicit verified endpoint.
-Foundry monitoring does not implement gateway OpenTelemetry. The nonsecret JSON
+Foundry monitoring is separate from gateway OpenTelemetry. Gateway-bearing roots
+now default to the [two-stage native telemetry path](docs/native-telemetry.md):
+managed ingestion first, then a GET-only readiness handoff and a fresh plan for
+the scoped DCR publisher/exporter. Stage one reports `pending`; existing legacy
+exporters require an explicit compatibility choice and separate migration.
+The nonsecret JSON
 environment adapter and [GET-only live qualification runner](docs/live-readback.md)
 remain separate from application deployment.
 

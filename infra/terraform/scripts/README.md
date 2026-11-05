@@ -11,3 +11,9 @@ need registry access. It does not retrieve credentials, deploy resources,
 invoke models, repair exporters, configure azd, deploy an agent or certify
 runtime/telemetry/lifecycle acceptance. Existing Bicep mutation/recovery hooks
 must not be reused against Terraform-owned resources.
+
+[`wait_for_telemetry.py`](wait_for_telemetry.py) is **not an offline check**.
+It is the separate, bounded Azure GET-only helper for the
+[two-stage native telemetry path](../docs/native-telemetry.md). It requires an
+existing matching public-cloud CLI login and writes a new explicit nonsecret
+handoff, never a resource, grant, credential or automatic variable file.

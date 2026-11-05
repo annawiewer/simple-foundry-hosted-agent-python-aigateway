@@ -48,6 +48,10 @@ terraform "-chdir=$TerraformRoot" plan -input=false
 
 These are Azure-enabled commands, not part of the offline check. Review the
 current plan before authorizing apply; no automatic deployment is implied.
+Gateway telemetry defaults to a pending first stage. Follow the
+[native telemetry guide](native-telemetry.md) to obtain the explicit readiness
+handoff and complete a fresh second-stage plan with the same root/workspace
+and original inputs. Do not use the initial plan as a completed exporter plan.
 
 ## Ownership and graph
 
@@ -66,6 +70,7 @@ bundled here.
 ```text
 root -> model account -> serialized deployments -> backend descriptor
 root -> gateway + identity
+gateway monitoring -> GET-only readiness handoff -> fresh plan -> DCR grant -> exporter
 backend descriptor + gateway identity -> backend grant -> provider -> catalog -> aliases
 root -> agent account/project -> support grants -> Storage/ACR connections
 ```
@@ -80,6 +85,7 @@ not establish propagation or runtime authorization.
 |---|---|
 | `model_deployments`, `model_aliases` | Null selects the bundled [profile](../model-profile.json). Custom deployment keys need compatible aliases. Root null aliases select the profile, unlike the gateway module's per-deployment default. |
 | `gateway_access_principals` | Explicit gateway-scoped Models User callers; no tool grant |
+| `gateway_telemetry_mode`, `gateway_native_telemetry` | Default `OpenTelemetry` with null handoff leaves export pending. The [staged path](native-telemetry.md) creates the DCR publisher/exporter; explicit `ApplicationInsights` retains legacy compatibility. |
 | `developer_principal_id`, `developer_principal_type` | Optional model/agent developer grants, not gateway tool access |
 | `api2026_resource_group_name` | Optional single **new owned** group; not adoption, consolidation or migration |
 | `gateway_backend_subnet_id` | Existing creation-only outbound subnet, delegated to `Microsoft.App/environments` in the gateway region; no private ingress or network provisioning |
@@ -131,7 +137,7 @@ A selected RemoteTool waits for the selected tools grant, not for proven
 propagation. Model access is independent. The connection API remains
 `2025-06-01`, with provider schema validation disabled for its auth contract.
 The monitoring option affects **Foundry agent monitoring**, not the gateway's
-missing native OpenTelemetry integration. Omitting ApiKey credentials in the
+separate native OpenTelemetry stages. Omitting ApiKey credentials in the
 managed-identity body does not establish stored credential erasure.
 
 The [environment adapter](../scripts/export_environment.py) accepts a nonsecret
@@ -176,7 +182,7 @@ require replacement; model deployments serialize on their account.
 | Registry sharing | Shared by default in the application root, matching Bicep; standalone support remains unshared. Hosted image pulls still need runtime acceptance. |
 | Foundry access/monitoring | Enabled by default in the application root, with narrower separate model/tool roles instead of broad AI Gateway User grants |
 | Insights connection | One project-level Terraform owner, using managed identity by default in the application root; not a claim of identical Bicep account-level topology |
-| Gateway telemetry | Legacy ApplicationInsights exporter, payload capture off. Native OpenTelemetry, generated-DCR readiness/scoped publisher role and Portal dashboard acceptance remain outstanding. |
+| Gateway telemetry | Native OpenTelemetry is a two-stage Terraform path with an external GET-only readiness helper, not the Bicep mutation hook. Explicit legacy mode remains available; selected-API provisioning, delivery and Portal dashboard acceptance remain outstanding. |
 | Tool/application lifecycle | No automatic Terraform ToolServer/Toolbox or azd workflow. Credential selection/upload must be explicit. |
 
 Do not run Bicep mutating hooks against Terraform-owned resources. Exporter

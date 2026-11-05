@@ -31,6 +31,12 @@ to the actual new gateway identity before provider use; no pregrant bootstrap
 or readiness/propagation check is supplied. Never give both owners the same
 assignment. Registration alone does not establish inference authorization.
 
-Outputs: `gateway_id`, `gateway_endpoint`, `gateway_monitoring`,
+Native telemetry initially reports `pending`. Complete the
+[two-stage telemetry path](../../docs/native-telemetry.md) with this same example
+root/workspace and the original backend/model inputs. The
+`gateway_telemetry_mode` and `gateway_native_telemetry` contract matches the full
+root; native export adds only the DCR grant/exporter, not backend ownership.
+
+Outputs: `gateway_id`, `gateway_endpoint`, `gateway_monitoring`, `gateway_telemetry_bootstrap`,
 `model_alias_configuration`. No key value, agent resources, RemoteTool or
 ToolServer is returned/created. See [evidence limits](../../docs/evidence-map.md).

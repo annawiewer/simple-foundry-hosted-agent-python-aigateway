@@ -18,9 +18,24 @@ output "gateway_api_versions" {
 output "gateway_monitoring" {
   description = "Configuration metadata, not proof of correlated telemetry delivery."
   value = {
-    kind             = "applicationInsights"
-    insights_id      = azapi_resource.insights.id
-    log_analytics_id = azapi_resource.logs.id
+    kind                    = local.native_telemetry_enabled ? "openTelemetry" : "applicationInsights"
+    configuration_status    = local.native_telemetry_enabled ? (local.native_telemetry_ready ? "configured" : "pending") : "legacy"
+    insights_id             = azapi_resource.insights.id
+    log_analytics_id        = azapi_resource.logs.id
+    exporter_id             = try(azapi_resource.telemetry_exporter[0].id, null)
+    data_collection_rule_id = try(azapi_resource.telemetry_publisher[0].parent_id, null)
+  }
+}
+output "gateway_telemetry_bootstrap" {
+  description = "Nonsecret input to the separate GET-only readiness helper. Does not authorize apply or prove telemetry delivery."
+  value = {
+    version              = 1
+    subscription_id      = var.subscription_id
+    mode                 = var.telemetry_mode
+    gateway_id           = azapi_resource.gateway.id
+    gateway_principal_id = azapi_resource.gateway.identity[0].principal_id
+    insights_id          = azapi_resource.insights.id
+    log_analytics_id     = azapi_resource.logs.id
   }
 }
 output "model_api_configuration" {

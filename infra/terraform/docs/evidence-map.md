@@ -10,11 +10,12 @@ Detailed execution receipts remain outside the repository.
 
 | Area | Established evidence | Not established |
 |---|---|---|
-| Terraform offline suite | 56 native mocked plans, semantic checks of those same plans, 25 Python tests and five locked root validations. The 16 adapter handoffs are checks within the plans, not additional runs. Full-root defaults and explicit minimal opt-outs are covered separately. | Azure availability, successful provisioning or runtime behavior. |
-| Application/container CI | Shared application tests, Bicep/hook checks, frozen image build and mocked container smoke passed at `13e9a7`. | Real Toolbox discovery, hosted image execution or intended-identity authorization. |
+| Terraform offline suite | 70 native mocked plans, semantic checks of those same plans, 39 Python tests and five locked root validations. The 18 adapter handoffs are checks within the plans, not additional runs. Full-root defaults, explicit minimal opt-outs and both telemetry stages are covered separately. | Azure availability, successful provisioning or runtime behavior. |
+| Application/container CI | Shared application tests, Bicep/hook checks, frozen image build and mocked container smoke passed at the published pre-telemetry checkpoint `7ca150f`. Check each later commit's own CI result. | Real Toolbox discovery, hosted image execution or intended-identity authorization. |
 | Earlier live infrastructure | 37 resource GETs, ten exact scoped roles, 250 matching compared leaves and an ordinary exact-input no-change plan. | New 2025 API deployment. Five requested fields were omitted by GET: three catalog `apiFormat` fields, exporter `kind` and registry `credentials`; full requested-body status is `INCOMPLETE`. |
 | Local application model client | One bounded Api-Key Responses request through the shared client returned HTTP 200. | Hosted agent, managed-identity invocation, real tools or scheduled routine. |
 | Gateway request logs | Four earlier requests were correlated to the expected Application Insights component. | Native OpenTelemetry export, the Portal gateway dashboard or hosted-agent tracing. |
+| Native telemetry source | Two-stage managed ingestion, bounded GET-only helper, exact gateway/DCR ownership, native/legacy/pending mock plans and gateway-example forwarding. See the [usage and migration boundary](native-telemetry.md). | A new live native deployment, protected-exporter migration, endpoint-query acceptance, publisher propagation, delivery or dashboard/tracing acceptance. |
 | Model content-safety readback | A disposable 2026 model returned all four requested Medium severities; the policy ID was omitted. The disposable model was removed with source preservation confirmed. | Enforcement, 2025 write acceptance, MCP safety or enabled safety in the current Terraform defaults. |
 | Full application lifecycle | Infrastructure outputs, a nonsecret adapter, default application-root access/monitoring/shared registry wiring and explicit opt-outs exist. | Automatic Terraform azd integration, ToolServer/Toolbox, credential delivery, hosted agent/routine, rotation, recovery and teardown. |
 
@@ -36,18 +37,21 @@ access. Passing tests describe their assertions, not missing parity features.
 |---|---|
 | [`root.tftest.hcl`](../tests/root.tftest.hcl) | Composition, aliases, input guards, full-root defaults, minimal opt-outs and independent model/tool/monitoring settings |
 | [`gateway.tftest.hcl`](../tests/gateway.tftest.hcl) | Standalone gateway, frontend, exporter destination and callers |
+| [`telemetry.tftest.hcl`](../tests/telemetry.tftest.hcl) | Native readiness, scoped publisher/exporter and rejection of stale or mismatched handoffs |
 | [`models.tftest.hcl`](../tests/models.tftest.hcl) | Model profile and deployment guards |
 | [`agents.tftest.hcl`](../tests/agents.tftest.hcl) | Independent support resources, network inputs and monitoring connection |
 | [`examples.tftest.hcl`](../tests/examples.tftest.hcl) | Four standalone roots and external-pregrant configuration |
+| [`examples-telemetry.tftest.hcl`](../tests/examples-telemetry.tftest.hcl) | Native handoff forwarding through both gateway-bearing examples |
 | [`check_contracts.py`](../tests/check_contracts.py) | API bodies, exact grants, routes, sole ownership and dependency edges |
 | [`test_environment_adapter.py`](../tests/test_environment_adapter.py) | Nonsecret allow-list, Responses compatibility and resource/endpoint relationships |
 | [`test_live_readback.py`](../tests/test_live_readback.py) | GET-only scope, omissions, safe receipts and no overwrite |
+| [`test_telemetry_readiness.py`](../tests/test_telemetry_readiness.py) | Readiness polling, CLI/ARM context, endpoint validation, bounds, redaction and explicit no-overwrite handoffs |
 
 ## Remaining acceptance gates
 
-Complete native OpenTelemetry/DCR integration and the credential-explicit tool
-lifecycle; wire an opt-in Terraform azd route without invoking Bicep writers.
-Then qualify the selected full-root wiring and shared registry on a reviewed
+Complete the credential-explicit tool lifecycle and selected-API content-safety
+implementation; wire an opt-in Terraform azd route without invoking Bicep writers.
+Then qualify native OpenTelemetry, the selected full-root wiring and shared registry on a reviewed
 target with intended-identity allow/deny, real read-only GitHub tools, hosted
 image/agent/routine, governance enforcement, correlated telemetry and repeatable
 lifecycle operations.

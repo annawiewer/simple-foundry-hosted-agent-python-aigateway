@@ -30,3 +30,25 @@ variable "environment_name" {
     error_message = "Use 1-32 lowercase letters, digits or hyphens, starting with a letter."
   }
 }
+
+variable "gateway_telemetry_mode" {
+  description = "OpenTelemetry uses two explicit stages. ApplicationInsights preserves an existing legacy exporter until a separately reviewed migration."
+  type        = string
+  default     = "OpenTelemetry"
+  nullable    = false
+}
+variable "gateway_native_telemetry" {
+  description = "Nonsecret readiness-helper handoff for the second stage; null leaves native telemetry pending."
+  type = object({
+    version                 = number
+    gateway_id              = string
+    gateway_principal_id    = string
+    insights_id             = string
+    log_analytics_id        = string
+    data_collection_rule_id = string
+    metrics_endpoint        = string
+    logs_endpoint           = string
+    traces_endpoint         = string
+  })
+  default = null
+}

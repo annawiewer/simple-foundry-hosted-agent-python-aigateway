@@ -127,6 +127,11 @@ override_resource {
   }
 }
 override_resource {
+  target          = module.ai_gateway.azapi_resource.logs
+  override_during = plan
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.OperationalInsights/workspaces/aigw-470daa23c957-logs" }
+}
+override_resource {
   target          = module.ai_gateway.azapi_resource.foundry_provider[0]
   override_during = plan
   values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957/workspaces/default/modelProviders/foundry" }
@@ -157,6 +162,16 @@ override_resource {
 
 run "root_default" {
   command = plan
+  assert {
+    condition = (
+      output.gateway_monitoring.configuration_status == "pending" &&
+      output.gateway_monitoring.exporter_id == null &&
+      output.gateway_telemetry_bootstrap.mode == "OpenTelemetry" &&
+      output.gateway_telemetry_bootstrap.gateway_principal_id == output.deployment_contract.gateway.principal_id &&
+      contains(output.deployment_contract.deferred_integrations, "native gateway telemetry readiness")
+    )
+    error_message = "The default root must expose native bootstrap metadata and explicitly defer its exporter until stage two."
+  }
   assert {
     condition = (
       length(azapi_resource.foundry_gateway_model_access) == 2 &&
@@ -195,6 +210,56 @@ run "root_default" {
       contains(output.deployment_contract.deferred_integrations, "RemoteTool")
     )
     error_message = "The handoff is an allow-listed nonsecret infrastructure contract, not fabricated application parity."
+  }
+}
+
+run "root_native_telemetry" {
+  command = plan
+  variables {
+    gateway_native_telemetry = {
+      version                 = 1
+      gateway_id              = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957"
+      gateway_principal_id    = "00000000-0000-0000-0000-000000000002"
+      insights_id             = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.Insights/components/gateway"
+      log_analytics_id        = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.OperationalInsights/workspaces/aigw-470daa23c957-logs"
+      data_collection_rule_id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/managed-monitoring/providers/Microsoft.Insights/dataCollectionRules/native"
+      metrics_endpoint        = "https://metrics.example.invalid/otlp/v1/metrics"
+      logs_endpoint           = "https://logs.example.invalid/otlp/v1/logs"
+      traces_endpoint         = "https://logs.example.invalid/otlp/v1/traces"
+    }
+  }
+  override_resource {
+    target          = module.ai_gateway.azapi_resource.insights
+    override_during = plan
+    values = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.Insights/components/gateway"
+      output = {
+        insights_id             = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.Insights/components/gateway"
+        log_analytics_id        = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.OperationalInsights/workspaces/aigw-470daa23c957-logs"
+        managed_ingestion       = "Enabled"
+        data_collection_rule_id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/managed-monitoring/providers/Microsoft.Insights/dataCollectionRules/native"
+        metrics_endpoint        = "https://metrics.example.invalid/otlp/v1/metrics"
+        logs_endpoint           = "https://logs.example.invalid/otlp/v1/logs"
+        traces_endpoint         = "https://logs.example.invalid/otlp/v1/traces"
+      }
+    }
+  }
+  assert {
+    condition = (
+      output.gateway_monitoring.configuration_status == "configured" &&
+      output.gateway_monitoring.data_collection_rule_id == var.gateway_native_telemetry.data_collection_rule_id &&
+      !contains(output.deployment_contract.deferred_integrations, "native gateway telemetry readiness")
+    )
+    error_message = "The second-stage root handoff must reach the gateway module and remove only the completed configuration gate."
+  }
+}
+
+run "root_legacy_telemetry" {
+  command = plan
+  variables { gateway_telemetry_mode = "ApplicationInsights" }
+  assert {
+    condition     = output.gateway_monitoring.configuration_status == "legacy" && output.gateway_monitoring.kind == "applicationInsights"
+    error_message = "The root must forward the explicit legacy compatibility choice."
   }
 }
 
