@@ -5,8 +5,9 @@ This sample demonstrates a **hub-and-spoke governance architecture** for Foundry
 The setup and deployment commands below use **Bicep (the default)**. For the
 alternative infrastructure path, start with the [Terraform guide](infra/terraform/README.md)
 and its [acceptance boundaries](infra/terraform/docs/evidence-map.md).
-Terraform does not yet provide the complete hosted-agent, Toolbox and routine
-workflow described below.
+The opt-in [guided Terraform application path](infra/terraform/docs/application-flow.md)
+joins the infrastructure/tool handoffs to agent deployment and a separately
+enabled daily schedule. Full hosted-agent parity is not yet live-qualified.
 
 ## Prerequisites
 

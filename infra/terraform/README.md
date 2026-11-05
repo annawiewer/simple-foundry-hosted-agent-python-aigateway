@@ -12,6 +12,9 @@ single [acceptance matrix and remaining gates](docs/evidence-map.md#acceptance-m
 ## Start here
 
 Follow the single [offline and deployment-preparation route](docs/architecture.md#offline-and-deployment-preparation).
+For the complete staged route through the agent and optional daily schedule,
+follow the [guided application flow](docs/application-flow.md). It keeps
+Terraform plan/apply explicit and does not change the root Bicep manifest.
 The compatibility baseline is Terraform **1.11.4**, locked AzAPI **2.13.0**,
 PowerShell 7 and Python 3. Offline checks need no Azure credentials; uncached
 locked providers still require registry access.
@@ -73,8 +76,10 @@ remain separate from application deployment.
 
 See [ownership, state and API differences](docs/architecture.md) and the
 [validation and acceptance guide](docs/evidence-map.md). Live tool/credential
-acceptance, automatic azd integration and hosted application/routine deployment
-remain subsequent work; the
+acceptance and hosted application/routine qualification remain subsequent work.
+The [application helper](docs/application-flow.md) now provides offline preparation
+and separately confirmed app-only azd deployment; it neither replaces Terraform
+nor installs tools, grants roles or reuses Bicep hooks. The
 [tool contract boundary](docs/tool-credential-boundary.md) explains why existing
 credential hooks are not reused. Telemetry
 configuration alone is not delivery proof; the evidence map distinguishes the

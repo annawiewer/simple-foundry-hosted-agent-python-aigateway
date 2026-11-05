@@ -1,8 +1,9 @@
 # Preparation, contracts and ownership
 
 One Terraform composition root calls three independent capability modules.
-It is an alternative infrastructure path, not yet the complete Bicep/azd
-hosted-agent workflow. See the [acceptance matrix](evidence-map.md#acceptance-matrix).
+The opt-in [application flow](application-flow.md) connects its staged handoffs
+to the shared agent and a separately enabled routine, without changing Bicep.
+Full hosted parity remains unaccepted; see the [acceptance matrix](evidence-map.md#acceptance-matrix).
 
 ## Offline and deployment preparation
 
@@ -52,6 +53,10 @@ Gateway telemetry defaults to a pending first stage. Follow the
 [native telemetry guide](native-telemetry.md) to obtain the explicit readiness
 handoff and complete a fresh second-stage plan with the same root/workspace
 and original inputs. Do not use the initial plan as a completed exporter plan.
+Then follow the [guided application sequence](application-flow.md) for the
+tool handoffs, isolated offline preparation and separately authorized agent
+and schedule operations. It never substitutes native azd Terraform provisioning
+for this locked, explicit plan/apply process.
 
 ## Ownership and graph
 
@@ -62,6 +67,7 @@ and original inputs. Do not use the initial plan as a completed exporter plan.
 | [ai-gateway](../modules/ai-gateway/README.md) | Gateway/identity, key resource, monitoring/exporter, backend grant, provider/catalog/aliases and selected model callers |
 | [foundry-agents](../modules/foundry-agents/README.md) | Account/project, Storage/ACR, monitoring, internal grants and three support connections |
 | Explicit [tool runner](toolchain.md), outside Terraform | Whole GitHub ToolServer/credential lifecycle and one Foundry Toolbox; no overlapping connection writer |
+| Explicit [application helper](application-flow.md), outside Terraform | Isolated azd app workspace, one agent deployment attempt and a separately authorized routine; no infrastructure, connection, tool or role writer |
 | External owner | Referenced existing model resources, outbound subnet/private connectivity and optional backend pregrant |
 
 The service owns the default gateway workspace. The root configures providers;
@@ -75,6 +81,7 @@ gateway monitoring -> GET-only readiness handoff -> fresh plan -> DCR grant -> e
 backend descriptor + gateway identity -> backend grant -> provider -> catalog -> aliases
 root -> agent account/project -> support grants -> Storage/ACR connections
 tool runner -> ToolServer -> explicit endpoint handoff -> Terraform RemoteTool -> tool runner Toolbox
+applied contract + connected bootstrap + Toolbox receipt -> offline app workspace -> agent -> explicit schedule gate
 ```
 
 The gateway owns its backend grant to avoid a sibling-module RBAC cycle.
@@ -169,6 +176,14 @@ of resource ownership; service-generated registry hostnames remain valid.
 No GitHub credential/repository, Toolbox value or runtime readiness is supplied.
 Do not pass state as adapter input.
 
+The [application helper](application-flow.md) reuses that adapter and separately
+validates the connected tool bootstrap/receipt. It supplies the repository and
+versioned Toolbox endpoint from those handoffs, plus the endpoint alias needed
+by the agent extension. It omits infrastructure-owning azd services and disables
+automatic developer-role repair. Terraform's `deferred_integrations` still
+describes work owned outside Terraform, not missing helper source or evidence
+that those external stages have run.
+
 ## Preserved contracts and deliberate differences
 
 Gateway, catalog, aliases, key and telemetry resources now use
@@ -192,7 +207,7 @@ require replacement; model deployments serialize on their account.
 | Foundry access/monitoring | Enabled by default in the application root, with narrower separate model/tool roles instead of broad AI Gateway User grants |
 | Insights connection | One project-level Terraform owner, using managed identity by default in the application root; not a claim of identical Bicep account-level topology |
 | Gateway telemetry | Native OpenTelemetry is a two-stage Terraform path with an external GET-only readiness helper, not the Bicep mutation hook. Explicit legacy mode remains available; selected-API provisioning, delivery and Portal dashboard acceptance remain outstanding. |
-| Tool/application lifecycle | An external explicit-credential runner now creates/inspects tools and rotates their credential without Terraform secret state. It requires exclusive ownership; creation is not atomic. Automatic azd orchestration and full live acceptance remain outstanding. |
+| Tool/application lifecycle | The explicit-credential tool runner requires exclusive ownership; creation is not atomic. The separate app-only azd helper deploys the agent first and requires another confirmation for its schedule. Terraform remains explicitly staged, not wrapped in native `azd up`. Tooling qualification and full live acceptance remain outstanding. |
 
 Do not run Bicep mutating hooks against Terraform-owned resources. Exporter
 kind migration can require deletion/recreation and is not automatic or approved

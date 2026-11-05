@@ -158,8 +158,11 @@ validated project, name and service-returned version. This is different from the
 ToolServer endpoint, which is taken directly from its GET response.
 The review JSON contains only `TOOLBOX_NAME`, `TOOLBOX_ENDPOINT` and
 `GITHUB_REPOSITORY`. It is not automatically imported into azd or the application.
-No role is granted and no application key is retrieved. Hosted deployment and
-the opt-in Terraform azd flow remain subsequent work.
+No role is granted and no application key is retrieved. Continue with the
+[guided application flow](application-flow.md), using this configured receipt
+and a fresh applied deployment contract. Its offline preparation, explicit agent
+deployment and separately enabled schedule never rerun the tool writer.
+Hosted/runtime acceptance remains a separate gate.
 
 ## Rotation and uncertain outcomes
 
