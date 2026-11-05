@@ -159,16 +159,17 @@ run "root_default" {
   command = plan
   assert {
     condition = (
-      length(azapi_resource.foundry_gateway_model_access) == 0 &&
-      length(azapi_resource.foundry_gateway_tool_access) == 0 &&
+      length(azapi_resource.foundry_gateway_model_access) == 2 &&
+      length(azapi_resource.foundry_gateway_tool_access) == 1 &&
       length(azapi_resource.gateway_remote_tool) == 0 &&
-      output.deployment_contract.integration.gateway_model_access_enabled == false &&
-      output.deployment_contract.integration.gateway_tool_access_enabled == false &&
-      output.deployment_contract.integration.monitoring_enabled == false &&
-      output.deployment_contract.integration.insights_connection_id == null &&
+      output.deployment_contract.integration.gateway_model_access_enabled &&
+      output.deployment_contract.integration.gateway_tool_access_enabled &&
+      output.deployment_contract.integration.monitoring_enabled &&
+      output.deployment_contract.integration.registry_connection_shared &&
+      output.deployment_contract.integration.insights_connection_id != null &&
       output.deployment_contract.integration.remote_tool_connection_id == null
     )
-    error_message = "Existing default graph must not silently grant gateway access or add a RemoteTool."
+    error_message = "The application root must default to scoped Foundry model/tool access, monitoring and shared registry support without inventing a RemoteTool."
   }
   assert {
     condition = (
@@ -197,9 +198,38 @@ run "root_default" {
   }
 }
 
+run "root_minimal" {
+  command = plan
+  variables {
+    enable_foundry_gateway_model_access   = false
+    enable_foundry_gateway_tool_access    = false
+    enable_foundry_monitoring_integration = false
+    share_foundry_registry_connection     = false
+  }
+  assert {
+    condition = (
+      length(azapi_resource.foundry_gateway_model_access) == 0 &&
+      length(azapi_resource.foundry_gateway_tool_access) == 0 &&
+      length(azapi_resource.gateway_remote_tool) == 0 &&
+      !output.deployment_contract.integration.gateway_model_access_enabled &&
+      !output.deployment_contract.integration.gateway_tool_access_enabled &&
+      !output.deployment_contract.integration.monitoring_enabled &&
+      !output.deployment_contract.integration.registry_connection_shared &&
+      output.deployment_contract.integration.insights_connection_id == null &&
+      output.deployment_contract.integration.remote_tool_connection_id == null
+    )
+    error_message = "Explicit opt-outs must preserve the previous minimal root behavior and unshared registry connection."
+  }
+}
+
 run "root_foundry_gateway_model_access" {
   command = plan
-  variables { enable_foundry_gateway_model_access = true }
+  variables {
+    enable_foundry_gateway_model_access   = true
+    enable_foundry_gateway_tool_access    = false
+    enable_foundry_monitoring_integration = false
+    share_foundry_registry_connection     = false
+  }
   assert {
     condition = (
       toset(keys(azapi_resource.foundry_gateway_model_access)) == toset(["account", "project"]) &&
@@ -212,13 +242,18 @@ run "root_foundry_gateway_model_access" {
       ]) &&
       length(azapi_resource.gateway_remote_tool) == 0
     )
-    error_message = "Opt-in grants must use stable account/project keys and exact caller principals/role at gateway scope, independently of tools."
+    error_message = "Selected model grants must use stable account/project keys and exact caller principals/role at gateway scope, independently of tools."
   }
 }
 
 run "root_foundry_gateway_tool_access" {
   command = plan
-  variables { enable_foundry_gateway_tool_access = true }
+  variables {
+    enable_foundry_gateway_model_access   = false
+    enable_foundry_gateway_tool_access    = true
+    enable_foundry_monitoring_integration = false
+    share_foundry_registry_connection     = false
+  }
   assert {
     condition = (
       toset(keys(azapi_resource.foundry_gateway_tool_access)) == toset(["project"]) &&
@@ -231,14 +266,17 @@ run "root_foundry_gateway_tool_access" {
       length(azapi_resource.foundry_gateway_model_access) == 0 &&
       length(azapi_resource.gateway_remote_tool) == 0
     )
-    error_message = "The tools opt-in must grant only the project Tools User at gateway scope, without creating model grants or a RemoteTool."
+    error_message = "Selected tool access must grant only the project Tools User at gateway scope, without creating model grants or a RemoteTool."
   }
 }
 
 run "root_tool_access_with_model_caller" {
   command = plan
   variables {
-    enable_foundry_gateway_tool_access = true
+    enable_foundry_gateway_model_access   = false
+    enable_foundry_gateway_tool_access    = true
+    enable_foundry_monitoring_integration = false
+    share_foundry_registry_connection     = false
     gateway_access_principals = {
       project = { principal_id = "00000000-0000-0000-0000-000000000004" }
     }
@@ -268,7 +306,13 @@ run "reject_duplicate_foundry_gateway_owners" {
 
 run "root_remote_tool" {
   command = plan
-  variables { gateway_remote_tool_endpoint = "https://service-managed-123.gateway.example.invalid/caller-verified-tool-endpoint" }
+  variables {
+    enable_foundry_gateway_model_access   = false
+    enable_foundry_gateway_tool_access    = false
+    enable_foundry_monitoring_integration = false
+    share_foundry_registry_connection     = false
+    gateway_remote_tool_endpoint          = "https://service-managed-123.gateway.example.invalid/caller-verified-tool-endpoint"
+  }
   override_resource {
     target          = module.ai_gateway.azapi_resource.gateway
     override_during = plan
@@ -305,8 +349,11 @@ run "root_remote_tool" {
 run "root_both_integrations" {
   command = plan
   variables {
-    enable_foundry_gateway_model_access = true
-    gateway_remote_tool_endpoint        = "https://gateway.example.invalid:443/caller-verified-tool-endpoint"
+    enable_foundry_gateway_model_access   = true
+    enable_foundry_gateway_tool_access    = false
+    enable_foundry_monitoring_integration = false
+    share_foundry_registry_connection     = false
+    gateway_remote_tool_endpoint          = "https://gateway.example.invalid:443/caller-verified-tool-endpoint"
   }
   assert {
     condition     = length(azapi_resource.foundry_gateway_model_access) == 2 && length(azapi_resource.gateway_remote_tool) == 1
@@ -316,7 +363,12 @@ run "root_both_integrations" {
 
 run "root_monitoring_integration" {
   command = plan
-  variables { enable_foundry_monitoring_integration = true }
+  variables {
+    enable_foundry_gateway_model_access   = false
+    enable_foundry_gateway_tool_access    = false
+    enable_foundry_monitoring_integration = true
+    share_foundry_registry_connection     = false
+  }
   assert {
     condition = (
       output.deployment_contract.integration.monitoring_enabled &&
@@ -324,7 +376,7 @@ run "root_monitoring_integration" {
       length(azapi_resource.foundry_gateway_tool_access) == 0 &&
       length(azapi_resource.gateway_remote_tool) == 0
     )
-    error_message = "Monitoring opt-in must reach the support module independently of gateway model or tool access."
+    error_message = "Selected monitoring must reach the support module independently of gateway model or tool access and registry sharing."
   }
 }
 

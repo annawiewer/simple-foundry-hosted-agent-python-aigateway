@@ -92,6 +92,13 @@ variable "enable_monitoring_integration" {
   nullable    = false
 }
 
+variable "share_registry_connection" {
+  description = "Mark the existing project-managed-identity registry connection shared. Standalone support defaults to unshared; the full application root opts in. Does not enable registry admin credentials or broaden the project AcrPull role."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "monitoring_public_network_access" {
   description = "Optional monitoring ingestion/query access override; null preserves service defaults."
   type        = string

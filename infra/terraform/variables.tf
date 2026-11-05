@@ -46,23 +46,30 @@ variable "gateway_location" {
 }
 
 variable "enable_foundry_gateway_model_access" {
-  description = "Opt in to root-owned AI Gateway Models User grants for both Foundry account and project identities at exact gateway scope. Does not configure tools or prove runtime authentication."
+  description = "Create root-owned AI Gateway Models User grants for both Foundry account and project identities at exact gateway scope. Enabled for the application root; set false to omit. Does not configure tools or prove runtime authentication."
   type        = bool
-  default     = false
+  default     = true
   nullable    = false
 }
 
 variable "enable_foundry_gateway_tool_access" {
-  description = "Opt in to a root-owned AI Gateway Tools User grant for only the Foundry project identity at exact gateway scope. Independent of model grants and the RemoteTool reference; creates no ToolServer or Toolbox and proves no invocation."
+  description = "Create a root-owned AI Gateway Tools User grant for only the Foundry project identity at exact gateway scope. Enabled for the application root; set false to omit. Independent of model grants and the RemoteTool reference; creates no ToolServer or Toolbox and proves no invocation."
   type        = bool
-  default     = false
+  default     = true
   nullable    = false
 }
 
 variable "enable_foundry_monitoring_integration" {
-  description = "Opt in to an in-place ProjectManagedIdentity body change on the existing owned Foundry AppInsights connection and two Insights-scoped publisher grants. Not tracing-delivery or Entra-only acceptance."
+  description = "Use ProjectManagedIdentity on the existing owned Foundry AppInsights connection and create two Insights-scoped publisher grants. Enabled for the application root; false selects the legacy ApiKey body without publisher grants. Not gateway OpenTelemetry, tracing-delivery or Entra-only acceptance."
   type        = bool
-  default     = false
+  default     = true
+  nullable    = false
+}
+
+variable "share_foundry_registry_connection" {
+  description = "Mark the existing project-managed-identity registry connection shared, matching the Bicep application root. Set false to keep it unshared. Does not enable registry admin credentials or broaden the project AcrPull role."
+  type        = bool
+  default     = true
   nullable    = false
 }
 

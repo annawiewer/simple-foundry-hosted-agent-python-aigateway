@@ -314,7 +314,7 @@ def check_storage_network(resources, storage_access, other_access):
                     "Storage-only override changed monitoring defaults")
 
 
-def check_agents(resources, remote_tool=False, monitoring=False):
+def check_agents(resources, remote_tool=False, monitoring=False, shared_registry=False):
     storage = one(resources, "Microsoft.Storage/storageAccounts@2024-01-01")
     registry = one(resources, "Microsoft.ContainerRegistry/registries@2023-07-01")
     project = one(resources, "Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview")
@@ -343,7 +343,11 @@ def check_agents(resources, remote_tool=False, monitoring=False):
                      p["credentials"]["key"] == "synthetic-only-not-a-credential") and
                     "isDefault" not in p and "sharedUserList" not in p, "Project Insights contract drift")
         elif p["category"] == "ContainerRegistry":
-            require(p["authType"] == "ManagedIdentity" and p["isSharedToAll"] is False,
+            require(p["authType"] == "ManagedIdentity" and p["isSharedToAll"] is shared_registry and
+                    p["target"] == registry["output"]["properties"]["loginServer"] and
+                    p["credentials"] == {"clientId": project["identity"][0]["principal_id"],
+                                         "resourceId": registry["id"]} and
+                    p["metadata"] == {"ResourceId": registry["id"]},
                     "Registry connection identity/sharing drift")
         else:
             require(p["authType"] == "AAD", "Storage connection must remain AAD")
@@ -375,7 +379,7 @@ def check_agents(resources, remote_tool=False, monitoring=False):
                 "Publisher assignments must target only account/project identities at exact agent Insights scope")
     else:
         require(not account_connections and not publishers,
-                "Default support must not silently add an account Insights connection or publisher grants")
+                "Monitoring-disabled support must not add an account Insights connection or publisher grants")
     roles = of_type(resources, "Microsoft.Authorization/roleAssignments@2022-04-01")
     for suffix, scope in (("ba92f5b4-2d11-453d-a403-e96b0029c9fe", storage["id"]),
                           ("7f951dda-4ed3-4680-a7ca-43fe172d538d", registry["id"])):
@@ -386,7 +390,7 @@ def check_agents(resources, remote_tool=False, monitoring=False):
 def check_plans():
     messages = [json.loads(line) for line in sys.stdin if line.strip()]
     plans = {m["@testrun"]: m["test_plan"] for m in messages if m.get("type") == "test_plan"}
-    expected = {"root_default", "root_custom", "root_single_group", "gateway_module", "models_module",
+    expected = {"root_default", "root_minimal", "root_custom", "root_single_group", "gateway_module", "models_module",
                 "agents_module", "gateway_only", "existing_models", "existing_models_pregranted",
                 "models_only", "agent_support_only", "root_replacement_profile", "root_backend_revision", "existing_models_custom_profile",
                 "root_disabled_backends", "existing_outbound_subnet", "root_storage_only_disabled",
@@ -399,6 +403,17 @@ def check_plans():
                  "root_all_integrations", "agent_support_monitoring_integration", "alias_protocol_intersection"}
     require(expected <= plans.keys(), f"Missing real mock plans: {sorted(expected - plans.keys())}")
     profile = json.loads((ROOT / "model-profile.json").read_text(encoding="utf-8-sig"))
+    # Native test_plan messages omit input variables: keep an independent scenario oracle.
+    # Tuple order is model access, tool access, monitoring, registry sharing.
+    root_settings = {
+        "root_minimal": (False, False, False, False),
+        "root_foundry_gateway_model_access": (True, False, False, False),
+        "root_foundry_gateway_tool_access": (False, True, False, False),
+        "root_tool_access_with_model_caller": (False, True, False, False),
+        "root_remote_tool": (False, False, False, False),
+        "root_both_integrations": (True, False, False, False),
+        "root_monitoring_integration": (False, False, True, False),
+    }
     for name, plan in plans.items():
         resources = resource_map(plan)
         require(not any("/toolServers@" in r.get("type", "") for r in resources.values()), "ToolServer ownership not in this increment")
@@ -408,19 +423,18 @@ def check_plans():
                     f"{name}: account project management/local auth drift")
         if name.startswith("root_"):
             gateway = check_gateway(resources)
-            monitoring = name in {"root_monitoring_integration", "root_all_integrations"}
-            tool_access = name in {"root_foundry_gateway_tool_access", "root_tool_access_with_model_caller",
-                                   "root_all_integrations"}
+            model_access, tool_access, monitoring, shared_registry = root_settings.get(name, (True, True, True, True))
             check_agents(resources, name in {"root_remote_tool", "root_both_integrations", "root_all_integrations"},
-                         monitoring)
+                         monitoring, shared_registry)
             check_roles(resources, custom=name == "root_custom",
-                        foundry_gateway_access=name in {"root_foundry_gateway_model_access", "root_both_integrations",
-                                                        "root_all_integrations"},
+                        foundry_gateway_access=model_access,
                         monitoring=monitoring, tool_access=tool_access,
                         project_model_caller=name == "root_tool_access_with_model_caller")
             integration = plan["output_changes"]["deployment_contract"]["after"]["integration"]
-            require(integration["gateway_tool_access_enabled"] == tool_access,
-                    "Nonsecret output must describe the actually selected project tool grant")
+            require(integration["gateway_model_access_enabled"] == model_access and
+                    integration["gateway_tool_access_enabled"] == tool_access and
+                    integration["registry_connection_shared"] == shared_registry,
+                    "Nonsecret output must describe the actually selected model/tool grants and registry sharing")
             require(integration["monitoring_enabled"] == monitoring and
                     (integration["insights_connection_id"] is None if not monitoring else
                      integration["insights_connection_id"] ==
@@ -520,27 +534,37 @@ def check_plans():
     require(summaries and summaries[-1]["passed"] > 0 and summaries[-1].get("failed", 0) == 0,
             "No successful native Terraform test summary")
     default = resource_map(plans["root_default"])
-    require(len(default) == 33, "Optional integration changed the frozen default 33-resource graph")
+    minimal = resource_map(plans["root_minimal"])
+    require(len(minimal) == 33 and len(default) == 38,
+            "The application root must add five scoped grants to the retained 33-resource minimal graph")
+    require(set(default) - set(minimal) == {
+                'azapi_resource.foundry_gateway_model_access["account"]',
+                'azapi_resource.foundry_gateway_model_access["project"]',
+                'azapi_resource.foundry_gateway_tool_access["project"]',
+                'module.foundry_agents.azapi_resource.role_assignment["monitoring-account"]',
+                'module.foundry_agents.azapi_resource.role_assignment["monitoring-project"]',
+            } and not set(minimal) - set(default),
+            "Default full-root wiring must preserve every existing owner and add only the five scoped grants")
     for run, additions in (("root_foundry_gateway_model_access", 2), ("root_foundry_gateway_tool_access", 1),
                            ("root_remote_tool", 1),
                            ("root_both_integrations", 3)):
         resources = resource_map(plans[run])
-        added = set(resources) - set(default)
+        added = set(resources) - set(minimal)
         require(len(resources) == 33 + additions and len(added) == additions and
                 all(address.startswith(("azapi_resource.foundry_gateway_model_access[",
                                         "azapi_resource.foundry_gateway_tool_access[",
                                         "azapi_resource.gateway_remote_tool[")) for address in added),
                 f"{run}: integration must add only root-owned selected resources")
     tool_callers = resource_map(plans["root_tool_access_with_model_caller"])
-    require(set(tool_callers) - set(default) == {
+    require(set(tool_callers) - set(minimal) == {
                 'azapi_resource.foundry_gateway_tool_access["project"]',
                 'module.ai_gateway.azapi_resource.role_assignment["gateway-models-user-project"]',
-            } and not set(default) - set(tool_callers),
+            } and not set(minimal) - set(tool_callers),
             "Distinct project model/tool roles must coexist without duplicate ownership or unrelated resources")
     for run, baseline, prefix in (
         ("agents_monitoring_integration", "agents_module", ""),
         ("agent_support_monitoring_integration", "agent_support_only", "module.component."),
-        ("root_monitoring_integration", "root_default", "module.foundry_agents."),
+        ("root_monitoring_integration", "root_minimal", "module.foundry_agents."),
         ("root_all_integrations", "root_both_integrations", "module.foundry_agents."),
     ):
         resources = resource_map(plans[run])

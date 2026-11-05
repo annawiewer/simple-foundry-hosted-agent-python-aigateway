@@ -76,6 +76,7 @@ output "deployment_contract" {
       gateway_model_access_enabled = var.enable_foundry_gateway_model_access
       gateway_tool_access_enabled  = var.enable_foundry_gateway_tool_access
       monitoring_enabled           = var.enable_foundry_monitoring_integration
+      registry_connection_shared   = module.foundry_agents.registry_connection_shared
       insights_connection_id       = module.foundry_agents.monitoring_connection_id
       remote_tool_endpoint         = var.gateway_remote_tool_endpoint
       remote_tool_connection_id    = try(azapi_resource.gateway_remote_tool[0].id, null)

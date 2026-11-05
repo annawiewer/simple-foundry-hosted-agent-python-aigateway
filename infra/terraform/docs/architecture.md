@@ -53,7 +53,7 @@ current plan before authorizing apply; no automatic deployment is implied.
 
 | Owner | Scope |
 |---|---|
-| Composition root | Naming/tags, three new workload groups by default, module composition, optional Foundry gateway grants/RemoteTool and outputs |
+| Composition root | Naming/tags, three new workload groups, module composition, default Foundry gateway grants, optional RemoteTool and outputs |
 | [foundry-models](../modules/foundry-models/README.md) | Model account, serialized deployments, backend filters and optional developer grants |
 | [ai-gateway](../modules/ai-gateway/README.md) | Gateway/identity, key resource, monitoring/exporter, backend grant, provider/catalog/aliases and selected model callers |
 | [foundry-agents](../modules/foundry-agents/README.md) | Account/project, Storage/ACR, monitoring, internal grants and three support connections |
@@ -97,17 +97,37 @@ they are not API-version selectors.
 
 ## Optional application integration
 
-These options remain off/null by default. Enabling one does not enable the
-others or deploy an application.
+The application root enables model access, project-only tool access, Foundry
+monitoring and registry sharing by default. Each can be disabled independently.
+Reusable modules and standalone examples retain their minimal defaults.
+These settings do not deploy an application or provision its tools.
 
-| Setting | Managed change |
-|---|---|
-| `enable_foundry_gateway_model_access = true` | Two root-owned gateway-scoped Models User grants for the agent account/project. Do not duplicate those grants in `gateway_access_principals`. |
-| `enable_foundry_gateway_tool_access = true` | One root-owned gateway-scoped Tools User grant for the project only. No account/developer permission expansion or ToolServer creation. |
-| `gateway_remote_tool_endpoint` | Explicit service-established HTTPS MCP URL on this gateway; creates the project-owned shared `aigw-github` RemoteTool with managed-identity auth. No guessed URL, credential or Toolbox. |
-| `enable_foundry_monitoring_integration = true` | In-place project Insights connection switch to managed identity and account/project publisher grants at the agent Insights scope. No second connection owner. |
+| Setting | Root default | Managed change |
+|---|---|---|
+| `enable_foundry_gateway_model_access` | `true` | Two root-owned gateway-scoped Models User grants for the agent account/project. Do not duplicate those grants in `gateway_access_principals`. |
+| `enable_foundry_gateway_tool_access` | `true` | One root-owned gateway-scoped Tools User grant for the project only. No account/developer tool permission or ToolServer creation. |
+| `enable_foundry_monitoring_integration` | `true` | In-place project Insights connection switch to managed identity and account/project publisher grants at the agent Insights scope. No second connection owner. |
+| `share_foundry_registry_connection` | `true` | Mark the existing project-managed-identity registry connection shared, matching Bicep. Registry admin stays disabled; project AcrPull stays registry-scoped. |
+| `gateway_remote_tool_endpoint` | `null` | Explicit service-established HTTPS MCP URL on this gateway; creates the project-owned shared `aigw-github` RemoteTool with managed-identity auth. No guessed URL, credential or Toolbox. |
 
-A selected RemoteTool waits for the optional tools grant, not for proven
+**Upgrading an existing root:** omitted switches now select five additional
+scoped grants and managed-identity/shared-connection bodies. Review a fresh plan
+against the original inputs; names and Terraform resource addresses are unchanged.
+To retain the previous minimal root behavior, explicitly set:
+
+```hcl
+enable_foundry_gateway_model_access   = false
+enable_foundry_gateway_tool_access    = false
+enable_foundry_monitoring_integration = false
+share_foundry_registry_connection     = false
+```
+
+Changing these values on an already configured deployment can remove grants or
+change connection authentication/sharing. No state adoption or automatic
+migration is included. The nonsecret contract reports the selected settings,
+including `integration.registry_connection_shared`.
+
+A selected RemoteTool waits for the selected tools grant, not for proven
 propagation. Model access is independent. The connection API remains
 `2025-06-01`, with provider schema validation disabled for its auth contract.
 The monitoring option affects **Foundry agent monitoring**, not the gateway's
@@ -153,14 +173,14 @@ require replacement; model deployments serialize on their account.
 | Backend filtering | Terraform pins `Microsoft.DefaultV2`; Bicep omits `raiPolicyName`. Omission is not proof of the effective default. |
 | Model request rate | The bundled profile requests 100 calls/minute per identity; Bicep has no default request-rate policy. An explicit replacement profile can omit it. |
 | Model account | Terraform retains `allowProjectManagement = true`, versus false in Bicep; no live mutation is included. |
-| Registry sharing | Terraform's connection is unshared, versus shared in Bicep. Full-hosted behavior still needs resolution and acceptance. |
-| Foundry access/monitoring | Explicit opt-ins instead of default full-application wiring; narrower separate model/tool roles instead of broad AI Gateway User grants |
-| Insights connection | One project-level Terraform owner, optionally using managed identity; not a claim of identical Bicep account-level topology |
+| Registry sharing | Shared by default in the application root, matching Bicep; standalone support remains unshared. Hosted image pulls still need runtime acceptance. |
+| Foundry access/monitoring | Enabled by default in the application root, with narrower separate model/tool roles instead of broad AI Gateway User grants |
+| Insights connection | One project-level Terraform owner, using managed identity by default in the application root; not a claim of identical Bicep account-level topology |
 | Gateway telemetry | Legacy ApplicationInsights exporter, payload capture off. Native OpenTelemetry, generated-DCR readiness/scoped publisher role and Portal dashboard acceptance remain outstanding. |
 | Tool/application lifecycle | No automatic Terraform ToolServer/Toolbox or azd workflow. Credential selection/upload must be explicit. |
 
 Do not run Bicep mutating hooks against Terraform-owned resources. Exporter
 kind migration can require deletion/recreation and is not automatic or approved
-by this API-pin change. State adoption, rotation, recovery and teardown need
+by these source changes. State adoption, rotation, recovery and teardown need
 separately reviewed ownership-aware procedures. Do not remove `prevent_destroy`
 or mutate state to bypass a stop.

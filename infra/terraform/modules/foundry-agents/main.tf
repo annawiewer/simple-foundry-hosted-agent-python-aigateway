@@ -114,7 +114,7 @@ resource "azapi_resource" "registry_connection" {
       category      = "ContainerRegistry"
       target        = azapi_resource.registry.output.properties.loginServer
       authType      = "ManagedIdentity"
-      isSharedToAll = false
+      isSharedToAll = var.share_registry_connection
       credentials = {
         clientId   = azapi_resource.project.identity[0].principal_id
         resourceId = azapi_resource.registry.id

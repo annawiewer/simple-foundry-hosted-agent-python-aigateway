@@ -65,6 +65,7 @@ module "foundry_agents" {
   public_network_access            = coalesce(var.standalone_backend_public_network_access, "Enabled")
   storage_public_network_access    = var.agent_storage_public_network_access
   enable_monitoring_integration    = var.enable_foundry_monitoring_integration
+  share_registry_connection        = var.share_foundry_registry_connection
   monitoring_public_network_access = var.standalone_backend_public_network_access
   developer_principal_id           = var.developer_principal_id
   developer_principal_type         = var.developer_principal_type

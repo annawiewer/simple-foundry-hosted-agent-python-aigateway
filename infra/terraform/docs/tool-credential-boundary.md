@@ -4,7 +4,8 @@ ToolServer, Toolbox and GitHub credential delivery are **not implemented or
 accepted** by this Terraform contribution. An explicitly configured RemoteTool
 connection is only a reference; it does not create its remote server, populate
 credentials, establish a Toolbox or prove tool invocation.
-The separate default-off project Tools User grant is authorization
+The separate project Tools User grant, enabled by default in the application
+root, is authorization
 configuration only, not an exception to this boundary.
 
 ## Contract findings
@@ -50,8 +51,9 @@ No assignment or inference was made during the lookup. Receipts remain outside
 the contribution.
 
 `enable_foundry_gateway_tool_access` grants this role only to the existing
-Foundry project identity, at this gateway's exact scope. It is independently
-default-off. The root owns it; the gateway module's explicit caller map still
+Foundry project identity, at this gateway's exact scope. It defaults to true in
+the application root and can be disabled independently. The root owns it;
+standalone modules/examples do not add it. The gateway module's caller map still
 grants Models User only. The broader AI Gateway User role is not substituted.
 Narrower ToolServer-level scope requires a separately established resource
 identity; a runtime URL alone is not that identity.

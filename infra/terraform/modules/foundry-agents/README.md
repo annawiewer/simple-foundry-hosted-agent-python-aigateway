@@ -18,7 +18,8 @@ Publisher grants (`3913510d-42f4-4e42-8a64-420c390055eb`), for the existing
 account/project identities at this module's exact Insights scope. It defaults
 to false; the connection depends on both grants. Account/project keys remain
 known before identity creation. The root exposes this as
-`enable_foundry_monitoring_integration`.
+`enable_foundry_monitoring_integration` and enables it by default; this reusable
+module and the agent-support-only example retain the false default.
 
 The connection retains `accounts/projects/connections@2025-06-01`, its original
 Terraform address, project parent and name, unshared, with Bicep's managed-identity
@@ -34,7 +35,8 @@ under the original resource IDs. Azure reset both creation timestamps, so a
 Terraform in-place plan is not proof of unchanged service-internal backing.
 The opt-in omits ApiKey credentials; omission alone does not prove that the
 service erases previously stored values. No Insights local-auth setting,
-registry sharing, credential hook or application instrumentation is changed.
+registry-sharing setting, credential hook or application instrumentation is
+changed by the monitoring switch.
 This does not enforce Entra-only ingestion or prove trace delivery.
 
 `storage_public_network_access` accepts null (inherit `public_network_access`),
@@ -46,13 +48,18 @@ the override is not proof of private-only runtime operation.
 
 The project receives Storage data access, ACR pull access and account-scoped
 Cognitive Services roles. Storage and registry connections depend on their
-grants. ACR uses a project-managed-identity connection, unshared; AppInsights is
+grants. ACR uses a project-managed-identity connection, unshared by default;
+`share_registry_connection = true` sets `isSharedToAll` on that same connection.
+It does not enable registry admin credentials or broaden the project AcrPull
+grant. The application root enables sharing through
+`share_foundry_registry_connection`; standalone support does not.
+Hosted image pulls still need runtime acceptance. AppInsights is
 an unshared project-local ApiKey connection unless explicitly opted in above.
-These are the current default connection contracts, not a claim of upstream
-publisher/sharing/auth equivalence.
+These are the reusable module's defaults, not the application root's defaults
+or a claim of complete upstream runtime equivalence.
 
 Outputs include account/project IDs and principals, project endpoint,
-registry ID/endpoint/connection name, Storage name/ID and monitoring IDs.
+registry ID/endpoint/connection name/sharing state, Storage name/ID and monitoring IDs.
 `monitoring_connection_id` exposes the existing project-owned connection ID only
 when the monitoring opt-in is enabled; otherwise it is null.
 The project endpoint is constructed from the supplied account/project names;

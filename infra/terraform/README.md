@@ -18,7 +18,7 @@ locked providers still require registry access.
 
 | Entry | Purpose |
 |---|---|
-| This root | Three workload groups, three modules and nonsecret infrastructure outputs |
+| This root | Three workload groups, three modules, default Foundry access/monitoring/shared registry wiring and nonsecret outputs |
 | [Gateway only](examples/gateway-only/README.md) | Gateway scaffold without backend models or agent support |
 | [Existing models](examples/existing-models/README.md) | Gateway routing to a referenced, same-subscription backend |
 | [Models only](examples/models-only/README.md) | Model account and pinned deployments |
@@ -28,17 +28,19 @@ Modules: [ai-gateway](modules/ai-gateway/README.md),
 [foundry-models](modules/foundry-models/README.md),
 [foundry-agents](modules/foundry-agents/README.md).
 
-The root additionally provides **opt-in** Foundry model-access grants, a separate
-project-only tool-access grant, an explicit-endpoint RemoteTool reference and a
-nonsecret JSON environment adapter. A tool role does not create a ToolServer,
-deliver a credential or establish working tool invocation.
-An independent monitoring opt-in changes the existing Insights connection to
-Bicep's managed-identity body in place and adds two resource-scoped publisher
-grants, without creating a second connection owner.
-These settings remain off by default and do not implement gateway OpenTelemetry.
-See the
-[integration inputs and adapter](docs/architecture.md#optional-application-integration)
-and [GET-only live qualification runner](docs/live-readback.md).
+The application root **enables by default** Foundry model-access grants, a
+separate project-only tool-access grant, the managed-identity Insights connection
+with two scoped publisher grants, and registry-connection sharing. Each setting
+can be disabled independently; reusable modules and standalone examples retain
+their minimal defaults. Existing users should review the
+[default changes and explicit opt-outs](docs/architecture.md#optional-application-integration)
+before planning an upgrade.
+
+A tool role does not create a ToolServer, deliver a credential or establish
+working invocation. The RemoteTool still requires an explicit verified endpoint.
+Foundry monitoring does not implement gateway OpenTelemetry. The nonsecret JSON
+environment adapter and [GET-only live qualification runner](docs/live-readback.md)
+remain separate from application deployment.
 
 See [ownership, state and API differences](docs/architecture.md) and the
 [validation and acceptance guide](docs/evidence-map.md). ToolServer,
