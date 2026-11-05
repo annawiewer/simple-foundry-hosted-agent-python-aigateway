@@ -17,3 +17,11 @@ It is the separate, bounded Azure GET-only helper for the
 [two-stage native telemetry path](../docs/native-telemetry.md). It requires an
 existing matching public-cloud CLI login and writes a new explicit nonsecret
 handoff, never a resource, grant, credential or automatic variable file.
+
+[`configure_tools.py`](configure_tools.py) is also **not an offline check**.
+Its explicit create/rotate commands write Azure resources and can upload the
+selected GitHub credential; its inspect commands are GET-only. Read the
+[tool lifecycle guide](../docs/toolchain.md) for authorization, exclusive-owner
+limits, receipt recovery and staged Terraform/Foundry handoffs. It never runs
+automatically, retrieves a GitHub login, grants roles, changes azd or deploys
+the application. Tests use synthetic credentials and mocked transports only.

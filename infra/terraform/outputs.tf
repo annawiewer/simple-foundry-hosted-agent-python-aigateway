@@ -5,6 +5,22 @@ output "gateway_api_key_id" { value = module.ai_gateway.gateway_api_key_id }
 output "gateway_api_versions" { value = module.ai_gateway.gateway_api_versions }
 output "gateway_monitoring" { value = module.ai_gateway.gateway_monitoring }
 output "gateway_telemetry_bootstrap" { value = module.ai_gateway.gateway_telemetry_bootstrap }
+output "gateway_toolchain_bootstrap" {
+  description = "Nonsecret input to the separately invoked tool lifecycle runner. Does not provision tools, select credentials or authorize execution."
+  value = {
+    version                   = 1
+    subscription_id           = var.subscription_id
+    gateway_id                = module.ai_gateway.gateway_id
+    workspace_id              = module.ai_gateway.gateway_workspace_id
+    gateway_endpoint          = module.ai_gateway.gateway_endpoint
+    api_version               = module.ai_gateway.gateway_api_versions.gateway
+    project_id                = module.foundry_agents.project_id
+    project_endpoint          = module.foundry_agents.project_endpoint
+    tool_access_enabled       = var.enable_foundry_gateway_tool_access
+    remote_tool_connection_id = try(azapi_resource.gateway_remote_tool[0].id, null)
+    remote_tool_endpoint      = var.gateway_remote_tool_endpoint
+  }
+}
 output "gateway_contract" {
   value = {
     name                  = "2026"

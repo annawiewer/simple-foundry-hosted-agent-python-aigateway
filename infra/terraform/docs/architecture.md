@@ -61,6 +61,7 @@ and original inputs. Do not use the initial plan as a completed exporter plan.
 | [foundry-models](../modules/foundry-models/README.md) | Model account, serialized deployments, backend filters and optional developer grants |
 | [ai-gateway](../modules/ai-gateway/README.md) | Gateway/identity, key resource, monitoring/exporter, backend grant, provider/catalog/aliases and selected model callers |
 | [foundry-agents](../modules/foundry-agents/README.md) | Account/project, Storage/ACR, monitoring, internal grants and three support connections |
+| Explicit [tool runner](toolchain.md), outside Terraform | Whole GitHub ToolServer/credential lifecycle and one Foundry Toolbox; no overlapping connection writer |
 | External owner | Referenced existing model resources, outbound subnet/private connectivity and optional backend pregrant |
 
 The service owns the default gateway workspace. The root configures providers;
@@ -73,6 +74,7 @@ root -> gateway + identity
 gateway monitoring -> GET-only readiness handoff -> fresh plan -> DCR grant -> exporter
 backend descriptor + gateway identity -> backend grant -> provider -> catalog -> aliases
 root -> agent account/project -> support grants -> Storage/ACR connections
+tool runner -> ToolServer -> explicit endpoint handoff -> Terraform RemoteTool -> tool runner Toolbox
 ```
 
 The gateway owns its backend grant to avoid a sibling-module RBAC cycle.
@@ -100,6 +102,9 @@ credential or invented ToolServer/Toolbox endpoint. Use `gateway_api_versions`
 for actual API pins. Historical `2026` compatibility labels, naming salts and
 `api2026_resource_group_name` are retained to avoid renaming existing resources;
 they are not API-version selectors.
+The separate root-only `gateway_toolchain_bootstrap` output carries the exact
+gateway/project and selected connection metadata to the opt-in tool runner.
+No new tool resource, role or default behavior is introduced by this output.
 
 ## Optional application integration
 
@@ -179,7 +184,7 @@ require replacement; model deployments serialize on their account.
 
 | Surface | Remaining difference or decision |
 |---|---|
-| Gateway/MCP safety | The bundled application-root profile selects `Medium` on all models, matching Bicep. Explicit profiles support Low/Medium/High or null; standalone defaults remain opt-in. MCP safety and selected-API enforcement remain unqualified. Backend `Microsoft.DefaultV2` is a separate control. |
+| Gateway/MCP safety | The bundled root selects `Medium` on all models; explicit profiles allow overrides/omission and standalone defaults remain opt-in. The external tool runner also requests Medium for MCP. Selected-API enforcement remains unqualified. Backend `Microsoft.DefaultV2` is a separate control. |
 | Backend filtering | Terraform pins `Microsoft.DefaultV2`; Bicep omits `raiPolicyName`. Omission is not proof of the effective default. |
 | Model request rate | The bundled profile requests 100 calls/minute per identity; Bicep has no default request-rate policy. An explicit replacement profile can omit it. |
 | Model account | Terraform retains `allowProjectManagement = true`, versus false in Bicep; no live mutation is included. |
@@ -187,10 +192,10 @@ require replacement; model deployments serialize on their account.
 | Foundry access/monitoring | Enabled by default in the application root, with narrower separate model/tool roles instead of broad AI Gateway User grants |
 | Insights connection | One project-level Terraform owner, using managed identity by default in the application root; not a claim of identical Bicep account-level topology |
 | Gateway telemetry | Native OpenTelemetry is a two-stage Terraform path with an external GET-only readiness helper, not the Bicep mutation hook. Explicit legacy mode remains available; selected-API provisioning, delivery and Portal dashboard acceptance remain outstanding. |
-| Tool/application lifecycle | No automatic Terraform ToolServer/Toolbox or azd workflow. Credential selection/upload must be explicit. |
+| Tool/application lifecycle | An external explicit-credential runner now creates/inspects tools and rotates their credential without Terraform secret state. It requires exclusive ownership; creation is not atomic. Automatic azd orchestration and full live acceptance remain outstanding. |
 
 Do not run Bicep mutating hooks against Terraform-owned resources. Exporter
 kind migration can require deletion/recreation and is not automatic or approved
-by these source changes. State adoption, rotation, recovery and teardown need
-separately reviewed ownership-aware procedures. Do not remove `prevent_destroy`
+by these source changes. State adoption, live credential rotation/recovery and
+teardown need separately reviewed ownership-aware procedures. Do not remove `prevent_destroy`
 or mutate state to bypass a stop.

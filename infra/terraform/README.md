@@ -59,6 +59,9 @@ acceptance or safety enforcement; see the [acceptance matrix](docs/evidence-map.
 
 A tool role does not create a ToolServer, deliver a credential or establish
 working invocation. The RemoteTool still requires an explicit verified endpoint.
+The opt-in [GitHub tool runner](docs/toolchain.md) provides the separate
+credential-explicit ToolServer/Toolbox lifecycle and nonsecret connection
+handoffs. It is not called by Terraform or azd and has not been live-qualified.
 Foundry monitoring is separate from gateway OpenTelemetry. Gateway-bearing roots
 now default to the [two-stage native telemetry path](docs/native-telemetry.md):
 managed ingestion first, then a GET-only readiness handoff and a fresh plan for
@@ -69,9 +72,9 @@ environment adapter and [GET-only live qualification runner](docs/live-readback.
 remain separate from application deployment.
 
 See [ownership, state and API differences](docs/architecture.md) and the
-[validation and acceptance guide](docs/evidence-map.md). ToolServer,
-Toolbox, credential delivery, automatic azd integration and hosted
-application/routine deployment remain subsequent increments; the
+[validation and acceptance guide](docs/evidence-map.md). Live tool/credential
+acceptance, automatic azd integration and hosted application/routine deployment
+remain subsequent work; the
 [tool contract boundary](docs/tool-credential-boundary.md) explains why existing
 credential hooks are not reused. Telemetry
 configuration alone is not delivery proof; the evidence map distinguishes the

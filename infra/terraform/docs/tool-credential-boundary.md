@@ -1,14 +1,40 @@
 # ToolServer and credential boundary
 
-ToolServer, Toolbox and GitHub credential delivery are **not implemented or
-accepted** by this Terraform contribution. An explicitly configured RemoteTool
-connection is only a reference; it does not create its remote server, populate
-credentials, establish a Toolbox or prove tool invocation.
+An explicit-credential [tool lifecycle runner](toolchain.md) now implements
+ToolServer creation/rotation, GET-only inspection and Foundry Toolbox creation.
+**These paths are source-tested, not live-accepted.** Terraform itself still
+owns only the RemoteTool connection and selected grants; an explicitly
+configured connection does not create its remote server or prove invocation.
 The separate project Tools User grant, enabled by default in the application
 root, is authorization
 configuration only, not an exception to this boundary.
 
-## Contract findings
+## Selected 2025 contract
+
+The [official CLI installer pinned at b2204cf4](https://github.com/Azure/aigateway/blob/b2204cf4a32f2d69e07fc475cee7c6056a28e711/cli/install.ps1)
+identifies release `1.0.0b22` and wheel SHA-256
+`3363ee0efde6ec22f445fd11f2b6b625867c1ab49b8ab76108f6e1bfa920060a`.
+Its inspected 2025 ToolServer serializer uses `displayName` and dictionary-of-list
+credential headers, matching the [Bicep request](../../main.bicep).
+Its GET schema exposes **`properties.mcpEndpointUrl`**, not the November
+`gatewayEndpoints[]` contract described below. The runner preserves that returned
+MCP URL rather than constructing a sample path.
+
+The official CLI custom implementation documents that ToolServer creation does
+not enforce `If-None-Match`. This runner therefore requires explicit exclusive
+ownership, checks the exact missing-resource response and refuses existing
+names. This is not atomic creation. Rotation sends a fresh specific ETag only
+after matching the receipt and complete nonsecret configuration. Neither schema
+inspection nor mocks prove service-side conditional enforcement.
+
+The Foundry path follows the pinned
+[Toolbox v1 client](https://github.com/Azure/azure-dev/blob/1273b0ddd9a04b09352f67632a6f1e3952fc5df0/cli/azd/extensions/azure.ai.toolboxes/internal/pkg/azure/foundry_toolsets_client.go)
+and [versioned endpoint construction](https://github.com/Azure/azure-dev/blob/1273b0ddd9a04b09352f67632a6f1e3952fc5df0/cli/azd/extensions/azure.ai.toolboxes/internal/cmd/toolbox_show.go).
+It uses direct requests rather than `azd ai toolbox create`, avoiding the latter's
+automatic role-assignment and environment-write behavior. It never writes the
+Terraform-owned RemoteTool connection.
+
+## Earlier contract findings and limits
 
 The November 4-5, 2026 investigations compared the upstream credential hook
 with the published standalone gateway contracts. The distinction matters before
@@ -58,12 +84,12 @@ grants Models User only. The broader AI Gateway User role is not substituted.
 Narrower ToolServer-level scope requires a separately established resource
 identity; a runtime URL alone is not that identity.
 
-## Required ownership for a future implementation
+## Implemented ownership and remaining acceptance
 
-A separately reviewed whole-resource runner is the conservative ownership
-boundary until write-only state exclusion, GET behavior, conditional updates
-and rotation are accepted for the selected API. Terraform must not create a
-ToolServer stub that a hook subsequently overwrites.
+The whole-resource runner is the ownership boundary. Terraform must not create
+a ToolServer stub that a hook subsequently overwrites. Owner markers, durable
+nonsecret receipts and strict readback prevent implicit adoption; they do not
+replace Azure authorization or guarantee protection against a competing writer.
 
 The runner must receive an explicitly selected credential; deployment approval
 does not select a personal GitHub login for cloud storage. Never infer consent
@@ -72,7 +98,7 @@ or save a secret-bearing request in logs, output artifacts, state or plans.
 Use repository-restricted, read-only permissions; an `X-MCP-Readonly` header is
 not a substitute for credential least privilege.
 
-Before calling a future implementation accepted:
+Before calling the live implementation accepted:
 
 - Establish the exact API, whole request body and service-returned runtime URL.
 - Preserve the entire intended ToolServer policy and endpoint configuration
@@ -82,4 +108,5 @@ Before calling a future implementation accepted:
 - Prove intended-identity allow/deny, actual read-only tool invocation and the
   Foundry Toolbox reference separately from role/connection creation.
 
-No current green check in the [evidence map](evidence-map.md) covers these gates.
+Offline tests cover request bodies, failure/rotation/inspection behavior,
+redaction and handoffs, not those live gates. See the [evidence map](evidence-map.md).

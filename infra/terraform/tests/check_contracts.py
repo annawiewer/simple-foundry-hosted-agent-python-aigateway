@@ -493,7 +493,8 @@ def check_plans():
     for name, plan in plans.items():
         resources = resource_map(plan)
         telemetry = "native" if name in native_ready else "legacy" if name in legacy else "pending"
-        require(not any("/toolServers@" in r.get("type", "") for r in resources.values()), "ToolServer ownership not in this increment")
+        require(not any("/toolServers@" in r.get("type", "") for r in resources.values()),
+                "ToolServer ownership belongs to the explicit-credential runner, never Terraform")
         accounts = of_type(resources, "Microsoft.CognitiveServices/accounts@2025-04-01-preview")
         for account in accounts.values():
             require(properties(account)["allowProjectManagement"] is True and properties(account)["disableLocalAuth"] is True,
@@ -510,6 +511,21 @@ def check_plans():
                         native_dcr_id=(resources["module.ai_gateway.azapi_resource.insights"]["output"]["data_collection_rule_id"]
                                        if name in native_ready else None))
             integration = plan["output_changes"]["deployment_contract"]["after"]["integration"]
+            bootstrap = plan["output_changes"]["gateway_toolchain_bootstrap"]["after"]
+            agents = resources["module.foundry_agents.azapi_resource.project"]
+            require(bootstrap == {
+                "version": 1,
+                "subscription_id": gateway["id"].split("/")[2],
+                "gateway_id": gateway["id"],
+                "workspace_id": gateway["id"] + "/workspaces/default",
+                "gateway_endpoint": plan["output_changes"]["gateway_endpoint"]["after"],
+                "api_version": API,
+                "project_id": agents["id"],
+                "project_endpoint": plan["output_changes"]["project_endpoint"]["after"],
+                "tool_access_enabled": tool_access,
+                "remote_tool_connection_id": integration["remote_tool_connection_id"],
+                "remote_tool_endpoint": integration["remote_tool_endpoint"],
+            }, "Toolchain bootstrap must be an exact nonsecret handoff from the owning resources")
             require(integration["gateway_model_access_enabled"] == model_access and
                     integration["gateway_tool_access_enabled"] == tool_access and
                     integration["registry_connection_shared"] == shared_registry,

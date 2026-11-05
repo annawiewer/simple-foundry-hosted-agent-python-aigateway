@@ -10,15 +10,16 @@ Detailed execution receipts remain outside the repository.
 
 | Area | Established evidence | Not established |
 |---|---|---|
-| Terraform offline suite | 75 native mocked plans, semantic checks of those same plans, 39 Python tests and five locked root validations. The 20 adapter handoffs are checks within the plans, not additional runs. Full-root defaults, safety overrides/opt-out, minimal integrations and both telemetry stages are covered separately. | Azure availability, successful provisioning or runtime behavior. |
-| Application/container CI | Shared application tests, Bicep/hook checks, frozen image build and mocked container smoke passed at the published telemetry checkpoint `ad46534`. Check each later commit's own CI result. | Real Toolbox discovery, hosted image execution or intended-identity authorization. |
+| Terraform offline suite | 75 native mocked plans, semantic checks of those same plans, 69 Python tests and five locked root validations. The 20 adapter handoffs are checks within the plans, not additional runs. Full-root defaults, safety overrides/opt-out, minimal integrations, both telemetry stages and the nonsecret tool bootstrap are covered separately. | Azure availability, successful provisioning or runtime behavior. |
+| Application/container CI | Shared application tests, Bicep/hook checks, frozen image build and mocked container smoke passed at the published content-safety checkpoint `538e958`. Check each later commit's own CI result. | Real Toolbox discovery, hosted image execution or intended-identity authorization. |
 | Earlier live infrastructure | 37 resource GETs, ten exact scoped roles, 250 matching compared leaves and an ordinary exact-input no-change plan. | New 2025 API deployment. Five requested fields were omitted by GET: three catalog `apiFormat` fields, exporter `kind` and registry `credentials`; full requested-body status is `INCOMPLETE`. |
 | Local application model client | One bounded Api-Key Responses request through the shared client returned HTTP 200. | Hosted agent, managed-identity invocation, real tools or scheduled routine. |
 | Gateway request logs | Four earlier requests were correlated to the expected Application Insights component. | Native OpenTelemetry export, the Portal gateway dashboard or hosted-agent tracing. |
 | Native telemetry source | Two-stage managed ingestion, bounded GET-only helper, exact gateway/DCR ownership, native/legacy/pending mock plans and gateway-example forwarding. See the [usage and migration boundary](native-telemetry.md). | A new live native deployment, protected-exporter migration, endpoint-query acceptance, publisher propagation, delivery or dashboard/tracing acceptance. |
 | Model content-safety source | Same-run mock assertions cover the exact four-category body, omission and coexistence with other policies. The bundled root selects Medium; explicit profiles allow Low/Medium/High or null. Standalone defaults and backend Microsoft.DefaultV2 are unchanged. See [configuration and opt-outs](../README.md#model-content-safety). | Selected-2025-API write/readback acceptance, enforcement or MCP safety. |
 | Earlier content-safety readback | A disposable 2026 model returned all four requested Medium severities; the policy ID was omitted. The disposable model was removed with source preservation confirmed. | Qualification of the current source/API, runtime enforcement or MCP safety. |
-| Full application lifecycle | Infrastructure outputs, a nonsecret adapter, default application-root access/monitoring/shared registry wiring and explicit opt-outs exist. | Automatic Terraform azd integration, ToolServer/Toolbox, credential delivery, hosted agent/routine, rotation, recovery and teardown. |
+| GitHub toolchain source | Explicit-credential whole-resource runner, Terraform-owned RemoteTool handoff, direct Foundry Toolbox creation and GET-only inspection. Thirty new mocked tests cover creation/rotation, concurrency stops, interrupted writes, redaction, version retention and nonsecret outputs. See the [usage and ownership limits](toolchain.md). | Selected-API provisioning, effective GitHub permissions, real credential delivery/rotation, server-side ETag enforcement, secret omission in cloud diagnostics, real MCP invocation or Toolbox consumption. Creation is not atomic. |
+| Full application lifecycle | Infrastructure outputs, nonsecret environment/tool handoffs, default application-root access/monitoring/shared registry wiring and explicit opt-outs exist. | Automatic Terraform azd integration, complete live tool/credential acceptance, hosted agent/routine, runtime rotation/recovery and teardown. |
 
 The earlier live environment used an explicit Storage public-access `Disabled`
 override to align with inherited policy. That is not private connectivity or
@@ -47,11 +48,12 @@ access. Passing tests describe their assertions, not missing parity features.
 | [`test_environment_adapter.py`](../tests/test_environment_adapter.py) | Nonsecret allow-list, Responses compatibility and resource/endpoint relationships |
 | [`test_live_readback.py`](../tests/test_live_readback.py) | GET-only scope, omissions, safe receipts and no overwrite |
 | [`test_telemetry_readiness.py`](../tests/test_telemetry_readiness.py) | Readiness polling, CLI/ARM context, endpoint validation, bounds, redaction and explicit no-overwrite handoffs |
+| [`test_toolchain.py`](../tests/test_toolchain.py) | Explicit ownership/credentials, complete request bodies, conditional rotation, uncertain outcomes, Toolbox versions, redaction and isolated handoffs |
 
 ## Remaining acceptance gates
 
-Complete the credential-explicit tool lifecycle and wire an opt-in Terraform azd
-route without invoking Bicep writers. Then qualify selected-API content safety,
+Wire an opt-in Terraform azd route without invoking Bicep writers. Qualify the
+credential-explicit tool lifecycle, selected-API content safety,
 native OpenTelemetry, the selected full-root wiring and shared registry on a reviewed
 target with intended-identity allow/deny, real read-only GitHub tools, hosted
 image/agent/routine, governance enforcement, correlated telemetry and repeatable
