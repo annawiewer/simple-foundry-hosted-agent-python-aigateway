@@ -2,6 +2,12 @@
 
 This sample demonstrates a **hub-and-spoke governance architecture** for Foundry Hosted Agents using **AI Gateway** as the central hub. The Microsoft Agent Framework repo-digest agent runs in an isolated Foundry project spoke (`infra/foundry-agents/`) with zero model deployments and no direct credentials to backing models or external MCP servers. All model inference (`gpt-latest` three-tier failover across `gpt-6.1-sol` → `gpt-6-sol` → `gpt-5.4-mini`, plus `gpt-mini-latest`) and read-only GitHub MCP tool calls (via Foundry Toolbox) are routed **exclusively through AI Gateway (`infra/ai-gateway/`)** — there is no other access path from the agent to the model account (`infra/foundry-models/`) or to GitHub MCP.
 
+The setup and deployment commands below use **Bicep (the default)**. For the
+alternative infrastructure path, start with the [Terraform guide](infra/terraform/README.md)
+and its [acceptance boundaries](infra/terraform/docs/evidence-map.md).
+Terraform does not yet provide the complete hosted-agent, Toolbox and routine
+workflow described below.
+
 ## Prerequisites
 
 - Python 3.13+ and [uv](https://docs.astral.sh/uv/getting-started/installation/)
