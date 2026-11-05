@@ -36,6 +36,27 @@ their minimal defaults. Existing users should review the
 [default changes and explicit opt-outs](docs/architecture.md#optional-application-integration)
 before planning an upgrade.
 
+## Model content safety
+
+The application root's **bundled model profile now selects `Medium`** for Hate,
+Self-Harm, Sexual and Violence on every gateway catalog model, matching the
+[Bicep policy body](../ai-gateway/main.bicep). Reusable modules and the
+existing-models example retain null/omitted defaults.
+
+An explicit `model_deployments` map **replaces**, rather than merges with, that
+profile. Set each model's `content_safety_severity` to `Low`, `Medium` or `High`
+to select the same severity for all four categories. Null or omission in an
+explicit map omits that model's policy; the string `"None"` is not accepted.
+To preserve the previous root policy omission, provide your full deployment
+map with null severities. Keep deployment keys compatible with `model_aliases`.
+
+This is a gateway model policy, not MCP protection or a change to the separate
+`Microsoft.DefaultV2` backend filter. Review the policy-body changes in a fresh
+plan before upgrading. Offline contracts do not prove selected-API write
+acceptance or safety enforcement; see the [acceptance matrix](docs/evidence-map.md).
+
+## Application and telemetry boundaries
+
 A tool role does not create a ToolServer, deliver a credential or establish
 working invocation. The RemoteTool still requires an explicit verified endpoint.
 Foundry monitoring is separate from gateway OpenTelemetry. Gateway-bearing roots

@@ -37,13 +37,31 @@ run "reject_empty_model_profile" {
   expect_failures = [var.model_deployments]
 }
 
-run "reject_unsupported_gateway_safety" {
+run "models_gateway_safety_metadata" {
   command = plan
   module { source = "./modules/foundry-models" }
   variables {
     model_deployments = {
       for key, model in jsondecode(file("model-profile.json")).model_deployments :
       key => merge(model, { content_safety_severity = "Medium" })
+    }
+  }
+  assert {
+    condition = alltrue([for deployment in azapi_resource.model_deployment :
+      deployment.body.properties.raiPolicyName == "Microsoft.DefaultV2" &&
+      !can(deployment.body.properties.policies)
+    ])
+    error_message = "Gateway safety metadata must not change the backend filter or add gateway policies to Cognitive Services deployments."
+  }
+}
+
+run "reject_invalid_model_safety" {
+  command = plan
+  module { source = "./modules/foundry-models" }
+  variables {
+    model_deployments = {
+      for key, model in jsondecode(file("model-profile.json")).model_deployments :
+      key => merge(model, { content_safety_severity = "medium" })
     }
   }
   expect_failures = [var.model_deployments]

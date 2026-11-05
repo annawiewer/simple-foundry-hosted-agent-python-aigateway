@@ -119,7 +119,7 @@ These settings do not deploy an application or provision its tools.
 **Upgrading an existing root:** omitted switches now select five additional
 scoped grants and managed-identity/shared-connection bodies. Review a fresh plan
 against the original inputs; names and Terraform resource addresses are unchanged.
-To retain the previous minimal root behavior, explicitly set:
+To omit these application integrations, explicitly set:
 
 ```hcl
 enable_foundry_gateway_model_access   = false
@@ -127,6 +127,10 @@ enable_foundry_gateway_tool_access    = false
 enable_foundry_monitoring_integration = false
 share_foundry_registry_connection     = false
 ```
+
+These switches do not disable the bundled root profile's `Medium` gateway model
+content safety. To retain previous policy omission, supply a complete deployment
+map with null severities; see [content-safety defaults and opt-outs](../README.md#model-content-safety).
 
 Changing these values on an already configured deployment can remove grants or
 change connection authentication/sharing. No state adoption or automatic
@@ -175,7 +179,7 @@ require replacement; model deployments serialize on their account.
 
 | Surface | Remaining difference or decision |
 |---|---|
-| Gateway/MCP safety | Severity inputs remain locally gated pending selected-API qualification. Backend `Microsoft.DefaultV2` is a separate control; neither configuration proves enforcement. |
+| Gateway/MCP safety | The bundled application-root profile selects `Medium` on all models, matching Bicep. Explicit profiles support Low/Medium/High or null; standalone defaults remain opt-in. MCP safety and selected-API enforcement remain unqualified. Backend `Microsoft.DefaultV2` is a separate control. |
 | Backend filtering | Terraform pins `Microsoft.DefaultV2`; Bicep omits `raiPolicyName`. Omission is not proof of the effective default. |
 | Model request rate | The bundled profile requests 100 calls/minute per identity; Bicep has no default request-rate policy. An explicit replacement profile can omit it. |
 | Model account | Terraform retains `allowProjectManagement = true`, versus false in Bicep; no live mutation is included. |

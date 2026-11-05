@@ -34,6 +34,12 @@ Required model metadata is `model_name`, `model_version`, `capacity` and
 cost/request limits. This module registers routes; it does not create or alter
 the referenced account/deployments or bind their backend safety policy.
 
+Optional `content_safety_severity` selects `Low`, `Medium` or `High` for all four
+gateway content-safety categories. Null or omission adds no such policy; other
+model policies are retained. The [application root](../../README.md#model-content-safety)
+selects `Medium` for its bundled profile, but this module has no implicit severity.
+This does not configure MCP safety or prove enforcement.
+
 `manage_backend_role_assignment = true` owns the gateway MI's account-scoped
 Foundry User grant and orders provider creation after it. False requires a
 platform-owned, already-ready grant to the actual gateway principal; it does

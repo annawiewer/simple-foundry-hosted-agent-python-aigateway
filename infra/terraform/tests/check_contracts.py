@@ -270,7 +270,16 @@ def check_routes(resources, profile):
         require(p["apiFormat"] == model["api_format"] and p["supportedEndpoints"] == model["endpoints"],
                 "Catalog protocol metadata mismatch")
         policies = {p["type"]: p for p in p["policies"]}
-        require("contentSafety" not in policies, "Unqualified gateway safety must not be silently enabled")
+        require(len(policies) == len(p["policies"]), "Model policies must not contain duplicate types")
+        severity = model.get("content_safety_severity")
+        if severity is None:
+            require("contentSafety" not in policies, "Null or omitted gateway safety must omit the policy")
+        else:
+            require(policies.get("contentSafety") == {
+                "type": "contentSafety",
+                "hateSeverity": severity, "selfHarmSeverity": severity,
+                "sexualSeverity": severity, "violenceSeverity": severity,
+            }, "Gateway safety must set exactly the four selected severities without an invented policy ID")
         require(policies["tokenLimit"]["count"] == model["token_limit"] and
                 policies["tokenLimit"]["counterKey"] == ["identity"], "Identity token policy drift")
         for field, kind, value in (("cost_limit", "costLimit", "amount"), ("request_limit", "requestRateLimit", "callsPerPeriod")):
@@ -460,6 +469,8 @@ def check_plans():
     expected |= {"root_foundry_gateway_tool_access", "root_tool_access_with_model_caller"}
     expected |= {"agents_monitoring_integration", "root_monitoring_integration",
                  "root_all_integrations", "agent_support_monitoring_integration", "alias_protocol_intersection"}
+    expected |= {"root_content_safety_overrides", "root_content_safety_disabled",
+                 "existing_models_content_safety", "models_gateway_safety_metadata"}
     native_ready = {"native_telemetry_ready", "root_native_telemetry", "gateway_only_native", "existing_models_native"}
     legacy = {"gateway_legacy_telemetry", "root_legacy_telemetry"}
     expected |= native_ready | legacy | {
@@ -513,19 +524,27 @@ def check_plans():
             if name != "root_replacement_profile":
                 check_models(resources, profile)
                 selected_profile = json.loads(json.dumps(profile))
-                if name == "root_custom":
-                    for model in selected_profile["model_deployments"].values():
-                        model.update(cost_limit=None, request_limit=7)
+                for key, model in selected_profile["model_deployments"].items():
+                    model["content_safety_severity"] = "Medium"
+                    if name == "root_custom":
+                        model.update(cost_limit=None, request_limit=7, content_safety_severity=None)
+                    elif name == "root_content_safety_disabled":
+                        model["content_safety_severity"] = None
+                    elif name == "root_content_safety_overrides":
+                        model["content_safety_severity"] = {
+                            "gpt-latest": "Low", "gpt-6-sol": "High", "gpt-mini-latest": None,
+                        }[key]
                 _, _, grants = check_routes(resources, selected_profile)
                 require(len(grants) == 1, "Gateway must own exactly its backend Foundry User grant")
                 require(grants[0]["body"]["properties"]["principalId"] == gateway["identity"][0]["principal_id"],
                         "Backend grant must target gateway MI, never an agent identity")
-            if name == "root_custom":
+            if name in {"root_custom", "root_content_safety_overrides"}:
                 for entry in of_type(resources, f"{GATEWAY}/workspaces/modelProviders/models@{API}").values():
                     filters = [p for p in properties(entry)["policies"] if p["type"] == "ipFilter"]
                     require(filters == [{"type": "ipFilter", "action": "Allow",
                             "cidrRanges": ["2001:db8:1234::/48", "203.0.113.42/32"]}],
                             "Optional CIDR policy must sort/deduplicate approved addresses")
+            if name == "root_custom":
                 require(gateway["tags"]["fixture"] == "forwarded", "Root lost explicit caller tags")
             groups = of_type(resources, "Microsoft.Resources/resourceGroups@2021-04-01")
             require(len(groups) == (1 if name == "root_single_group" else 3), "Fresh root group composition drift")
@@ -564,7 +583,7 @@ def check_plans():
                     "Gateway-only must not own models, projects or agents")
             require(not any("/modelProviders" in r.get("type", "") or "/aliases@" in r.get("type", "")
                             for r in resources.values()), "Gateway-only must not invent a backend")
-        elif name in {"models_module", "models_only"}:
+        elif name in {"models_module", "models_only", "models_gateway_safety_metadata"}:
             check_models(resources, profile)
             require(not any("Microsoft.ApiManagement/" in r.get("type", "") or "/projects@" in r.get("type", "")
                             for r in resources.values()), "Models-only acquired gateway/agent ownership")
@@ -597,12 +616,24 @@ def check_plans():
                         properties(grants[0])["principalId"] == gateway["identity"][0]["principal_id"],
                         "Existing-model grant must scope the gateway identity to only the external account")
             if name != "existing_models_custom_profile":
-                check_routes(resources, profile)
+                selected_profile = json.loads(json.dumps(profile))
+                if name == "existing_models_content_safety":
+                    for model in selected_profile["model_deployments"].values():
+                        model["content_safety_severity"] = "Medium"
+                check_routes(resources, selected_profile)
     summaries = [m["test_summary"] for m in messages if m.get("type") == "test_summary"]
     require(summaries and summaries[-1]["passed"] > 0 and summaries[-1].get("failed", 0) == 0,
             "No successful native Terraform test summary")
     default = resource_map(plans["root_default"])
     minimal = resource_map(plans["root_minimal"])
+    for run, baseline in (
+        ("root_content_safety_overrides", "root_default"),
+        ("root_content_safety_disabled", "root_default"),
+        ("existing_models_content_safety", "existing_models"),
+        ("models_gateway_safety_metadata", "models_module"),
+    ):
+        require(set(resource_map(plans[run])) == set(resource_map(plans[baseline])),
+                f"{run}: content safety must not change resource ownership")
     require(len(minimal) == 32 and len(default) == 37,
             "Native stage one defers the exporter; the full root still adds exactly five grants to the minimal graph")
     ready = resource_map(plans["root_native_telemetry"])

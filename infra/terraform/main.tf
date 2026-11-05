@@ -1,7 +1,7 @@
 locals {
   default_profile = jsondecode(file("${path.module}/model-profile.json"))
   model_deployments = var.model_deployments == null ? tomap({
-    for key, model in local.default_profile.model_deployments : key => merge(model, { content_safety_severity = null })
+    for key, model in local.default_profile.model_deployments : key => merge(model, { content_safety_severity = "Medium" })
   }) : var.model_deployments
   model_aliases       = var.model_aliases == null ? local.default_profile.model_aliases : var.model_aliases
   resource_token      = substr(sha256("${var.subscription_id}:${var.environment_name}:${var.location}:api2026gateway"), 0, 12)

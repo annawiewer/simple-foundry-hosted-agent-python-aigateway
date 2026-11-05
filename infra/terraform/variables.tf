@@ -207,7 +207,7 @@ variable "agent_storage_public_network_access" {
 }
 
 variable "model_deployments" {
-  description = "Optional complete replacement of the pinned bundled model profile. If deployment keys change, also supply matching model_aliases; region/quota remain a deployment gate."
+  description = "Optional complete replacement of the pinned bundled model profile, which uses Medium gateway content safety. In a replacement map, content_safety_severity is Low/Medium/High; null or omission leaves that model's gateway safety policy absent. If deployment keys change, also supply matching model_aliases; region/quota remain a deployment gate."
   type = map(object({
     model_name              = string
     model_version           = string

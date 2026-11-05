@@ -60,7 +60,7 @@ variable "public_network_access" {
 }
 
 variable "model_deployments" {
-  description = "Foundry deployments keyed by ARM-safe deployment name. Select model versions, deployment SKUs, and quota available to your subscription."
+  description = "Foundry deployments keyed by ARM-safe deployment name. Select model versions, deployment SKUs, and quota available to your subscription. Optional content_safety_severity is gateway metadata only; this module retains the separate Microsoft.DefaultV2 backend filter."
   type = map(object({
     model_name              = string
     model_version           = string
@@ -98,12 +98,6 @@ variable "model_deployments" {
       model.content_safety_severity == null ? true : contains(["Low", "Medium", "High"], model.content_safety_severity)
     ])
     error_message = "An optional content_safety_severity must be Low, Medium or High."
-  }
-  validation {
-    condition = alltrue([
-      for model in var.model_deployments : model.content_safety_severity == null
-    ])
-    error_message = "Gateway content_safety_severity is disabled pending qualification of the selected API. Omit it for now; the Microsoft.DefaultV2 backend filter is a separate control, not equivalent gateway safety."
   }
   validation {
     condition = alltrue([for model in var.model_deployments :

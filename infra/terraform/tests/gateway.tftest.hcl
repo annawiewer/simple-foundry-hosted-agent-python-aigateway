@@ -208,3 +208,23 @@ run "reject_backend_key_mismatch" {
   }
   expect_failures = [var.model_deployments]
 }
+
+run "reject_invalid_gateway_safety" {
+  command = plan
+  module { source = "./modules/ai-gateway" }
+  variables {
+    model_deployments = {
+      for key, model in jsondecode(file("model-profile.json")).model_deployments :
+      key => merge(model, { content_safety_severity = "None" })
+    }
+    backend = {
+      account_id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/external/providers/Microsoft.CognitiveServices/accounts/existing"
+      endpoint   = "https://existing.example.invalid/"
+      deployment_ids = {
+        for key in ["gpt-latest", "gpt-6-sol", "gpt-mini-latest"] :
+        key => "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/external/providers/Microsoft.CognitiveServices/accounts/existing/deployments/${key}"
+      }
+    }
+  }
+  expect_failures = [var.model_deployments]
+}

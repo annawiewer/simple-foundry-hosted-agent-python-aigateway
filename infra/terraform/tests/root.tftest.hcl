@@ -213,6 +213,33 @@ run "root_default" {
   }
 }
 
+run "root_content_safety_overrides" {
+  command = plan
+  variables {
+    model_allowed_client_cidrs = ["203.0.113.42/32", "2001:db8:1234::/48", "203.0.113.42/32"]
+    model_deployments = {
+      for key, model in jsondecode(file("model-profile.json")).model_deployments :
+      key => merge(model, {
+        content_safety_severity = {
+          gpt-latest      = "Low"
+          gpt-6-sol       = "High"
+          gpt-mini-latest = null
+        }[key]
+      })
+    }
+  }
+}
+
+run "root_content_safety_disabled" {
+  command = plan
+  variables {
+    model_deployments = {
+      for key, model in jsondecode(file("model-profile.json")).model_deployments :
+      key => merge(model, { content_safety_severity = null })
+    }
+  }
+}
+
 run "root_native_telemetry" {
   command = plan
   variables {

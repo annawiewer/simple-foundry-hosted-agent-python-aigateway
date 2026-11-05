@@ -46,6 +46,25 @@ run "existing_models" {
     error_message = "Existing deployments must still support the real three-tier alias without owning the backend account."
   }
 }
+run "existing_models_content_safety" {
+  command = plan
+  module { source = "./examples/existing-models" }
+  variables {
+    backend = {
+      account_id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/external/providers/Microsoft.CognitiveServices/accounts/existing"
+      endpoint   = "https://existing.example.invalid/"
+      deployment_ids = {
+        for key in ["gpt-latest", "gpt-6-sol", "gpt-mini-latest"] :
+        key => "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/external/providers/Microsoft.CognitiveServices/accounts/existing/deployments/${key}"
+      }
+    }
+    model_deployments = {
+      for key, model in jsondecode(file("model-profile.json")).model_deployments :
+      key => merge(model, { content_safety_severity = "Medium" })
+    }
+  }
+}
+
 run "existing_models_pregranted" {
   command = plan
   module { source = "./examples/existing-models" }

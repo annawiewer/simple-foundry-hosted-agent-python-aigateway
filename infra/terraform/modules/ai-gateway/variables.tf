@@ -130,7 +130,7 @@ variable "native_telemetry" {
   }
 }
 variable "model_deployments" {
-  description = "Foundry deployments keyed by ARM-safe deployment name. Select model versions, deployment SKUs, and quota available to your subscription."
+  description = "Foundry deployments keyed by ARM-safe deployment name. Select model versions, deployment SKUs, and quota available to your subscription. Optional content_safety_severity applies Low/Medium/High to all four gateway categories; null omits that policy."
   type = map(object({
     model_name              = string
     model_version           = string
@@ -173,12 +173,6 @@ variable "model_deployments" {
       model.content_safety_severity == null ? true : contains(["Low", "Medium", "High"], model.content_safety_severity)
     ])
     error_message = "An optional content_safety_severity must be Low, Medium or High."
-  }
-  validation {
-    condition = alltrue([
-      for model in var.model_deployments : model.content_safety_severity == null
-    ])
-    error_message = "Gateway content_safety_severity remains disabled pending qualification at the selected API version. Omit it; Microsoft.DefaultV2 is a backend filter, not equivalent gateway or MCP protection."
   }
   validation {
     condition = alltrue([for model in var.model_deployments :

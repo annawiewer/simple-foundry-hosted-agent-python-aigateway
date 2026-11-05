@@ -25,6 +25,13 @@ not per-deployment fallback aliases. Deployment metadata keys must exactly
 match `backend.deployment_ids`. Descriptor validation checks IDs/keys, **not
 live model compatibility or safety binding**.
 
+Gateway content safety remains **opt-in** in this example. In an explicit full
+deployment map, set per-model `content_safety_severity` to `Low`, `Medium` or
+`High`; null or omission leaves the policy absent. This changes only gateway
+catalog policies, never the existing backend filter. See the
+[content-safety contract](../../README.md#model-content-safety) and its live
+qualification limits.
+
 `manage_backend_role_assignment = true` (default) lets Terraform own the
 account-scoped grant. False requires an external owner to have granted access
 to the actual new gateway identity before provider use; no pregrant bootstrap

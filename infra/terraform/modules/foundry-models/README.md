@@ -12,12 +12,14 @@ Deployment map keys are stable deployment names. The full shared metadata type
 is in [`variables.tf`](variables.tf): required model name/version, capacity and
 token limit, with optional model format/SKU/API endpoints/description and policy
 metadata. Gateway policy fields travel alongside deployment metadata; this
-module does **not** enforce gateway token/cost/request limits.
+module does **not** enforce gateway token/cost/request limits or content safety.
+It accepts optional `content_safety_severity` (`Low`, `Medium`, `High` or null)
+for composition with [ai-gateway](../ai-gateway/README.md); accepting metadata
+does not create a gateway policy here.
 
 The account disables local authentication and enables project management.
 Deployments serialize through an account-scoped AzAPI operation lock and bind
-`Microsoft.DefaultV2`. Gateway routing keeps its content-safety input disabled
-pending selected-API qualification, not a proven service limitation.
+`Microsoft.DefaultV2`, independently of any selected gateway severity.
 The operation lock is not a remote state/concurrent-writer lock. Backend filter
 configuration is not enforcement proof or gateway/MCP filtering.
 
