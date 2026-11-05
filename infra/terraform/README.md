@@ -1,19 +1,13 @@
-# Terraform: API2026 infrastructure baseline
+# Terraform infrastructure
 
 A self-contained, fresh-deployment Terraform alternative for the standalone
 AI Gateway and Foundry support infrastructure. Existing Bicep, application and
 `azure.yaml` defaults are unchanged.
 
-**Status, November 5, 2026:** bounded infrastructure and local application-client
-checks passed, as did the full application/container CI. **Full hosted-agent/azd
-parity is not accepted.** The latest infrastructure checkpoint returned
-37 successful resource GETs and ten matched roles, with five requested fields
-omitted by Azure readback; full requested-body acceptance remains incomplete.
-The actual application client passed one key-auth Responses request, not hosted
-identity or tool execution. See the single
-[current acceptance summary and remaining gates](docs/evidence-map.md#current-acceptance-november-5-2026);
-earlier 33- and 35-resource checkpoints remain dated evidence, not the current
-combined configuration.
+**Full hosted-agent/azd parity is not yet accepted.** The public gateway API is
+`2025-09-01-preview`, aligned with the upstream Bicep path. Earlier live checks
+used a separate 2026 deployment and do not qualify this pin change. See the
+single [acceptance matrix and remaining gates](docs/evidence-map.md#acceptance-matrix).
 
 ## Start here
 
@@ -41,12 +35,13 @@ deliver a credential or establish working tool invocation.
 An independent monitoring opt-in changes the existing Insights connection to
 Bicep's managed-identity body in place and adds two resource-scoped publisher
 grants, without creating a second connection owner.
-Defaults still create the same 33-resource foundation. See the
+These settings remain off by default and do not implement gateway OpenTelemetry.
+See the
 [integration inputs and adapter](docs/architecture.md#optional-application-integration)
 and [GET-only live qualification runner](docs/live-readback.md).
 
 See [ownership, state and API differences](docs/architecture.md) and the
-[source capability/test/proof map](docs/evidence-map.md). ToolServer,
+[validation and acceptance guide](docs/evidence-map.md). ToolServer,
 Toolbox, credential delivery, automatic azd integration and hosted
 application/routine deployment remain subsequent increments; the
 [tool contract boundary](docs/tool-credential-boundary.md) explains why existing

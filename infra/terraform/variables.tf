@@ -138,7 +138,7 @@ variable "tags" {
   default     = {}
 }
 variable "api2026_resource_group_name" {
-  description = "Fresh standalone deployments only: exact name of one owned RG for all workloads. Null preserves the three-group API2026 layout; never use this to consolidate an existing state."
+  description = "Fresh standalone deployments only: exact name of one owned RG for all workloads. Null preserves the three-group layout; never use this to consolidate an existing state."
   type        = string
   default     = null
   validation {

@@ -48,8 +48,8 @@ The project receives Storage data access, ACR pull access and account-scoped
 Cognitive Services roles. Storage and registry connections depend on their
 grants. ACR uses a project-managed-identity connection, unshared; AppInsights is
 an unshared project-local ApiKey connection unless explicitly opted in above.
-These are the retained default API2026
-contracts, not a claim of upstream publisher/sharing/auth equivalence.
+These are the current default connection contracts, not a claim of upstream
+publisher/sharing/auth equivalence.
 
 Outputs include account/project IDs and principals, project endpoint,
 registry ID/endpoint/connection name, Storage name/ID and monitoring IDs.

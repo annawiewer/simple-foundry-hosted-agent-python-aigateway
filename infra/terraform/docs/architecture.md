@@ -1,303 +1,166 @@
-# Contracts, preparation and ownership
+# Preparation, contracts and ownership
 
-This root packages the historical API2026 gateway/model foundation. It does not
-migrate the old wrapper or implement the full Bicep-backed application workflow.
-See the [evidence map](evidence-map.md) for separate historical and fresh proof
-boundaries.
+One Terraform composition root calls three independent capability modules.
+It is an alternative infrastructure path, not yet the complete Bicep/azd
+hosted-agent workflow. See the [acceptance matrix](evidence-map.md#acceptance-matrix).
 
 ## Offline and deployment preparation
 
-Use this one route from the repository root in PowerShell 7. Examples use the
-same route, changing only `$TerraformRoot` to the chosen example directory.
-Use Terraform 1.11.4, Python 3 and the checked-in AzAPI 2.13.0 locks; do not
-upgrade providers as part of initialization.
+From the repository root, use PowerShell 7, Python 3 and Terraform 1.11.4 with
+the checked-in AzAPI 2.13.0 locks:
 
 ```powershell
 pwsh -NoProfile -File infra\terraform\scripts\Test-Offline.ps1
 
 $TerraformRoot = 'infra\terraform'
-# For example: 'infra\terraform\examples\gateway-only'
+# Or one directory under infra\terraform\examples.
 Copy-Item "$TerraformRoot\terraform.tfvars.example" "$TerraformRoot\terraform.tfvars"
 ```
 
-The runner is credential-free, not necessarily air-gapped: it initializes
-with backend disabled and read-only locks, checks formatting/validation, and
-runs provider-mocked contract tests. It does not deploy, invoke models or prove
-Azure/telemetry/application behavior. Keep the synthetic test inputs separate
-from real deployment inputs. On a non-Windows host use host-native separators;
-only claim platforms actually exercised by the current validation result.
+Do not overwrite existing deployment inputs. The runner uses mocked providers,
+backend-disabled initialization and read-only locks. It makes no Azure calls;
+registry access may be needed for uncached providers. Use host-native path
+separators on non-Windows systems.
 
-Edit the copied file locally. Replace the synthetic subscription, choose a
-unique environment name, and qualify service enablement, regions, model
-versions/SKUs and quota. The full root requires `subscription_id`, `location`
-and `gateway_location`; examples require `subscription_id` and `location`.
-Examples intentionally place their component and monitoring in one region.
-Existing-models also requires its actual backend descriptor.
+Replace the synthetic subscription and choose unique names. Qualify service
+enablement, locations, model versions/SKUs and quota for the actual target.
+The full root requires `subscription_id`, `location` and `gateway_location`.
+Examples require `subscription_id` and `location`; `existing-models` also needs
+its real backend descriptor.
 
-Before any Azure-enabled initialization/plan:
+Before Azure-enabled planning, select fresh state and an authorized target.
+Do not reuse old wrapper state, backend keys or deployed names. Authenticate a
+principal permitted to create the declared resources and scoped roles; keep
+credentials out of tfvars, command output and Git. Each independent example
+needs unique names and its own state/backend key.
 
-- Select a **fresh** environment and state location; never reuse an old wrapper
-  state, backend key or deployed resource names.
-- Choose authenticated AzAPI credentials and a principal permitted to create
-  the declared resources and scoped role assignments. No token/key belongs in
-  checked-in tfvars, backend files, command output or examples.
-- Review ownership, cost and destructive boundaries. Local state is the
-  supplied single-operator default. For shared/long-lived use, separately
-  provide a reviewed remote-backend declaration/configuration backed by
-  pre-existing authenticated, locked storage; this contribution supplies no
-  backend bootstrap or backend block. Three workload groups do not require
-  three states.
-- Protect local state, plans and `.terraform` data. AppInsights connection
-  strings occur in managed payloads; nonsecret outputs do **not** make state
-  or saved plans secret-free.
+Local state is the single-operator default. Shared use requires a separately
+reviewed remote backend with authenticated, locked storage; no backend bootstrap
+is included. State, saved plans and `.terraform` data can contain connection
+strings even though the published outputs are nonsecret.
 
-After that review and explicit target authorization, the Terraform-native
-preparation commands are:
+After reviewing the target and ownership:
 
 ```powershell
 terraform "-chdir=$TerraformRoot" init -input=false -lockfile=readonly
 terraform "-chdir=$TerraformRoot" plan -input=false
 ```
 
-These are Azure-enabled planning instructions, **not** part of the offline
-check or evidence of acceptance. Review the plan before separately authorizing
-apply. No automatic apply, credential retrieval or billable probe is provided.
-Each example needs its own state/backend key and unique names.
+These are Azure-enabled commands, not part of the offline check. Review the
+current plan before authorizing apply; no automatic deployment is implied.
 
 ## Ownership and graph
 
-| Owner | Managed scope |
+| Owner | Scope |
 |---|---|
-| Root | Naming/tags and three new workload groups by default; calls the three modules; owns optional Foundry gateway grants/RemoteTool reference and publishes outputs |
-| `foundry-models` | New model account, serialized deployments, backend filter bindings, optional developer roles |
-| `ai-gateway` | Gateway/system MI, runtime-key resource, monitoring/exporter, optional backend grant/provider/catalog/aliases, explicitly selected caller roles |
-| `foundry-agents` | Account/project identities, Storage/ACR, monitoring, internal roles and three support connections; optional in-place Insights identity-auth switch and publisher grants |
-| External owner | Referenced model account/deployments, existing outbound subnet/private connectivity, optional pregrant |
+| Composition root | Naming/tags, three new workload groups by default, module composition, optional Foundry gateway grants/RemoteTool and outputs |
+| [foundry-models](../modules/foundry-models/README.md) | Model account, serialized deployments, backend filters and optional developer grants |
+| [ai-gateway](../modules/ai-gateway/README.md) | Gateway/identity, key resource, monitoring/exporter, backend grant, provider/catalog/aliases and selected model callers |
+| [foundry-agents](../modules/foundry-agents/README.md) | Account/project, Storage/ACR, monitoring, internal grants and three support connections |
+| External owner | Referenced existing model resources, outbound subnet/private connectivity and optional backend pregrant |
 
-The service owns the gateway's default workspace. Child modules declare
-provider requirements; the initialized root configures the provider and lock.
-Root and examples have no dependency on the old source repository.
+The service owns the default gateway workspace. The root configures providers;
+child modules only declare requirements. All configuration dependencies are
+bundled here.
 
 ```text
-root groups -> models account -> serialized deployments -> backend descriptor
-root groups -> gateway + system identity
+root -> model account -> serialized deployments -> backend descriptor
+root -> gateway + identity
 backend descriptor + gateway identity -> backend grant -> provider -> catalog -> aliases
-root groups -> agent account/project -> support grants -> Storage/ACR connections
+root -> agent account/project -> support grants -> Storage/ACR connections
 ```
 
-The grant is deliberately gateway-owned: it orders the provider without a
-sibling-module cycle. Computed IDs are values, not `for_each` keys. RBAC resource
-completion is not authorization propagation; runtime readiness remains a gate.
-The agents module is independent; by default the root grants neither its
-account/project gateway invocation nor direct model-backend access.
+The gateway owns its backend grant to avoid a sibling-module RBAC cycle.
+Stable keys, not computed IDs, select resource instances. Role creation does
+not establish propagation or runtime authorization.
 
 ## Root inputs and outputs
 
-- `model_deployments = null` and `model_aliases = null` select the bundled
-  [profile](../model-profile.json), including primary three-tier and direct-mini
-  aliases. At this root, null aliases do **not** mean per-deployment aliases.
-  Custom deployment keys therefore need a compatible explicit alias map.
-- `gateway_access_principals` explicitly opts callers into gateway-scoped Models
-  User access. `developer_principal_id`/`developer_principal_type` opt into
-  developer grants on the model/agent support resources, not tool access.
-- `api2026_resource_group_name` optionally creates **one new owned group** for
-  all workloads. It neither adopts an existing group nor reproduces the owned
-  private lab, and is not a consolidation/migration switch.
-- `gateway_backend_subnet_id` references an existing creation-only **outbound**
-  subnet. The module checks `Microsoft.App/environments` delegation and gateway
-  region; it does not provision network/DNS/private endpoints or private ingress.
-  `standalone_backend_public_network_access = "Disabled"` requires that subnet
-  and separately owned working private connectivity. Null keeps backend public
-  access enabled and monitoring access unspecified.
-- `agent_storage_public_network_access` optionally overrides **only agent
-  Storage** (`Enabled`/`Disabled`); null inherits the global backend setting,
-  then defaults to `Enabled`. Disabling Storage alone does not require a
-  gateway subnet and does not change model/agent accounts, ACR or monitoring.
-  It changes Storage access configuration, not private connectivity or runtime
-  reachability; the module retains its configured `AzureServices` bypass.
-  The fresh live check used this explicit `Disabled` override to align with
-  inherited Storage policy, then verified an ordinary no-change plan. It does
-  not prove private Storage access or hosted-agent readiness.
-- `backend_revision` deliberately changes backend names/replaces resources
-  without renaming the gateway; it is not an automatic recovery switch.
+| Input | Behavior |
+|---|---|
+| `model_deployments`, `model_aliases` | Null selects the bundled [profile](../model-profile.json). Custom deployment keys need compatible aliases. Root null aliases select the profile, unlike the gateway module's per-deployment default. |
+| `gateway_access_principals` | Explicit gateway-scoped Models User callers; no tool grant |
+| `developer_principal_id`, `developer_principal_type` | Optional model/agent developer grants, not gateway tool access |
+| `api2026_resource_group_name` | Optional single **new owned** group; not adoption, consolidation or migration |
+| `gateway_backend_subnet_id` | Existing creation-only outbound subnet, delegated to `Microsoft.App/environments` in the gateway region; no private ingress or network provisioning |
+| `standalone_backend_public_network_access` | Disabling backends requires the outbound subnet and independently working private connectivity |
+| `agent_storage_public_network_access` | Storage-only override; otherwise inherits the global setting, then Enabled. Disabled creates no private endpoint/DNS or working hosted-compute path. |
+| `backend_revision` | Deliberately changes backend names/replacement without renaming the gateway; not automatic recovery |
 
-`deployment_contract` version 1 is an allow-listed infrastructure handoff:
-environment/subscription/location, group names, gateway ID/endpoint/principal/
-workspace/API versions/key-resource ID/monitoring IDs, model account/endpoint/
-deployment IDs/alias metadata, and agent account/project principals/endpoints/
-support and monitoring IDs.
-It declares deferred integration and lifecycle ownership. Additive integration
-metadata reports the selected access/connection configuration; a supplied
-RemoteTool endpoint is not service readiness proof. It contains **no key value,
-GitHub token or fabricated ToolServer/Toolbox endpoint**.
-Convenience outputs expose the same component IDs/endpoints and configuration
-metadata. See [`outputs.tf`](../outputs.tf) for exact shapes.
+[`outputs.tf`](../outputs.tf) defines the nonsecret version-1
+`deployment_contract`: IDs, endpoints, principals, aliases, selected integration
+metadata and deferred ownership. It contains no runtime key value, GitHub
+credential or invented ToolServer/Toolbox endpoint. Use `gateway_api_versions`
+for actual API pins. Historical `2026` compatibility labels, naming salts and
+`api2026_resource_group_name` are retained to avoid renaming existing resources;
+they are not API-version selectors.
 
 ## Optional application integration
 
-These settings do not change the default 33-resource/six-role graph or the
-independence of the three child modules:
+These options remain off/null by default. Enabling one does not enable the
+others or deploy an application.
 
-- `enable_foundry_gateway_model_access = true` adds two root-owned Models User
-  assignments at the exact gateway scope, for the account and project managed
-  identities. Both are off by default. Stable account/project keys and direct
-  resource references avoid a sibling-module cycle. Do not select the same
-  identities again in `gateway_access_principals`; a precondition rejects
-  duplicate ownership. Role creation does not prove runtime authorization.
-- `enable_foundry_gateway_tool_access = true` adds one root-owned Tools User
-  assignment at the exact gateway scope, for the **project identity only**.
-  It is independent of model access and the RemoteTool endpoint, and is off by
-  default. It neither broadens the account/developer grants nor substitutes the
-  broader AI Gateway User role. `gateway_access_principals` remains Models
-  User-only, so using that map for the same project is not duplicate ownership
-  of this different role. A selected RemoteTool waits for the optional tools
-  grant; that dependency is not proof of RBAC propagation. See the
-  [role-definition qualification](tool-credential-boundary.md#tool-role-qualification).
-- `gateway_remote_tool_endpoint = null` creates no connection. An explicitly
-  selected credential-free HTTPS endpoint on this deployed gateway creates the
-  root-owned `aigw-github` project connection, independently of model access.
-  Supply the independently qualified service-returned runtime URL (the published
-  ToolServer contract exposes `gatewayEndpoints[].url` for `api = "mcp"`).
-  No MCP path is inferred and selecting an endpoint does not enable a role.
-  The connection uses upstream `RemoteTool`/`ProjectManagedIdentity`, audience
-  `https://azure-api.net/aigateway`, `custom_MCP` metadata and project sharing.
-  Its separately pinned `2025-06-01` connection API disables provider schema
-  validation for that auth contract; mocks do not establish service acceptance.
-  It does not create ToolServer, credentials or Toolbox.
-- `enable_foundry_monitoring_integration = true` independently updates the existing
-  project-owned `AppInsights` connection to `ProjectManagedIdentity` in place and
-  adds two support-module resources: account/project Monitoring Metrics Publisher
-  grants at the exact agent Insights scope. Both grants precede the connection;
-  no broad module dependency or gateway dependency is introduced. Defaults stay
-  unchanged. The standalone support example exposes
-  `enable_monitoring_integration`. The connection retains its project parent,
-  name, Terraform address and `2025-06-01` API, using Bicep's managed-identity body
-  with provider schema validation disabled for its auth
-  discriminator. Its metadata uses the existing managed Insights connection
-  string, never a new secret action or public output.
+| Setting | Managed change |
+|---|---|
+| `enable_foundry_gateway_model_access = true` | Two root-owned gateway-scoped Models User grants for the agent account/project. Do not duplicate those grants in `gateway_access_principals`. |
+| `enable_foundry_gateway_tool_access = true` | One root-owned gateway-scoped Tools User grant for the project only. No account/developer permission expansion or ToolServer creation. |
+| `gateway_remote_tool_endpoint` | Explicit service-established HTTPS MCP URL on this gateway; creates the project-owned shared `aigw-github` RemoteTool with managed-identity auth. No guessed URL, credential or Toolbox. |
+| `enable_foundry_monitoring_integration = true` | In-place project Insights connection switch to managed identity and account/project publisher grants at the agent Insights scope. No second connection owner. |
 
-The monitoring option deliberately retains one Terraform connection owner and
-registry-sharing defaults. Account/project GET routes exposed matching existing
-connection bodies and creation times before the proposed second owner was
-rejected. The subsequent single-owner update was reflected through both routes
-under their existing resource IDs; both service creation timestamps reset.
-This supports the single-owner design, not a complete backing-identity or
-alias-semantics guarantee.
-The opt-in changes auth/metadata and omits ApiKey credentials; it does not prove
-credential erasure, identical Bicep topology, Entra-only ingestion or hosted-agent
-tracing. Root contract metadata exposes only the selected flag and nullable real
-project connection ID.
-Monitoring alone gives 35 resources/eight roles; with model access, 37/ten;
-with the explicit RemoteTool as well, 38/ten. The independent project tool grant
-adds one resource/role: all four opt-ins together give 39/eleven. These are
-configuration counts, not an assertion that the all-options graph was deployed.
-No network, Insights local-auth, application or Bicep configuration is changed.
+A selected RemoteTool waits for the optional tools grant, not for proven
+propagation. Model access is independent. The connection API remains
+`2025-06-01`, with provider schema validation disabled for its auth contract.
+The monitoring option affects **Foundry agent monitoring**, not the gateway's
+missing native OpenTelemetry integration. Omitting ApiKey credentials in the
+managed-identity body does not establish stored credential erasure.
 
-The [explicit adapter](../scripts/export_environment.py) accepts either a
-nonsecret `deployment_contract` version-1 object or a `terraform output -json`
-envelope with an explicitly nonsensitive contract:
+The [environment adapter](../scripts/export_environment.py) accepts a nonsecret
+version-1 contract or an explicitly nonsensitive `terraform output -json`
+envelope:
 
 ```powershell
 python -B infra\terraform\scripts\export_environment.py .\deployment-contract.json
 ```
 
-It prints only an allow-listed JSON environment mapping for manual review.
-It never calls Terraform/Azure/azd, changes the environment, writes an env file
-or runs lifecycle hooks. Original version-1 contracts remain supported. Custom
-profiles can select `--model-alias-key` and `--mini-model-alias-key`; the chosen
-primary and mini aliases must both advertise `/openai/v1/responses`. The
-installed shared application's `OpenAIChatClient` sends Responses requests to
-`/default/models/openai/v1/responses`. Responses-only aliases are accepted;
-Chat-Completions-only aliases are rejected. The bundled aliases advertise both
-protocols, so this corrects custom-profile compatibility rather than proving a
-default-profile runtime failure.
+It prints an allow-listed JSON mapping for review. It never calls Azure,
+Terraform or azd, writes an env file, selects credentials or runs hooks.
+For custom profiles, use `--model-alias-key` and `--mini-model-alias-key`.
+Both selected aliases must support `/openai/v1/responses`; Chat-Completions-only
+aliases are rejected because the shared application uses Responses.
 
-The adapter checks the existing agent account ID, the project's ARM parent and
-its URL's account/project names against the independent IDs, using the current
-agents module's account-name subdomain convention. It also checks the gateway
-resource group against its ARM ID. Resource identity comparisons are
-case-insensitive; the version-1 input shape and exported field set are unchanged.
-Registry hostnames and gateway origins are syntax-checked, not independently
-bound to their ARM IDs: these fields do not prove that relationship. In
-particular, service-owned hash-qualified registry hostnames remain valid; no
-`<registry-name>.azurecr.io` equality rule is imposed. Authoritative binding
-requires a richer, independently sourced resource-readback/provenance contract,
-not a second copy of the supplied hostname.
-
-The mapping supplies established infrastructure IDs, locations, groups,
-project/registry endpoints, gateway origin and aliases, **not secrets,
-GitHub repository/credentials, Toolbox values or runtime readiness**. Do not
-export state as adapter input. The existing app's managed-identity path remains
-an acceptance gate. Its inherited key path uses `Api-Key`; one bounded actual
-application-client request subsequently passed with that header, separately from
-the earlier raw `Authorization: Bearer` probes. Exporting settings alone proves
-neither result. See the [current evidence](evidence-map.md#current-acceptance-november-5-2026).
-No app/Bicep/`azure.yaml` behavior is changed here.
-
-The November 5 (CET) increment applied only the two opt-in model-access roles:
-zero existing resources changed or destroyed, all 35 resources/eight scoped
-roles read back, and the same exact-input ordinary plan returned no changes.
-The adapter produced 17 verified nonsecret fields from the actual updated
-outputs. RemoteTool remained null and no environment/azd settings were mutated.
-This proves role configuration and output interoperability, **not** managed-
-identity invocation, tool access or the inherited application key path.
-
-See [tool and credential ownership](tool-credential-boundary.md) before any
-future tool setup. Use the [read-only qualification runner](live-readback.md)
-to distinguish observable field agreement from GET-omitted values; neither
-the adapter nor a role/connection PUT constitutes full application acceptance.
+The adapter checks gateway group/ID and agent account/project ID/URL
+relationships. Gateway and registry hostname syntax is not independent proof
+of resource ownership; service-generated registry hostnames remain valid.
+No GitHub credential/repository, Toolbox value or runtime readiness is supplied.
+Do not pass state as adapter input.
 
 ## Preserved contracts and deliberate differences
 
-- Terraform requirements remain `>= 1.11.0, < 2.0.0`; the tested baseline is
-  1.11.4, with AzAPI `~> 2.13.0` locked at 2.13.0.
-- Standalone gateway/catalog/aliases/key API is `2026-09-01-preview`;
-  ApplicationInsights exporter intentionally retains `2025-09-01-preview`.
-  Foundry account/project/deployments use `2025-04-01-preview`.
-- Gateway create uses a create-only header, backend changes trigger replacement,
-  and `prevent_destroy` stops unreviewed gateway destruction. This is not an
-  Azure deletion lock. Alias body changes require replacement because the
-  source contract does not support an AzAPI PUT update as equivalent to PATCH.
-- Deployment operations serialize per account. Storage/ACR connections wait
-  for their actual grants; no whole-module dependency or provisioner hides
-  ordering.
-- Backend deployments bind `Microsoft.DefaultV2`. Gateway
-  `content_safety_severity` remains rejected pending qualification of the
-  selected API; this is a local gate, not evidence of service non-support.
-  Backend filtering is not equivalent to upstream gateway/MCP safety.
-  Configured token/cost/request/IP controls and failover routes are retained,
-  but enforcement/failover remain unproven.
-- Agent AppInsights uses a project-local, unshared ApiKey connection; registry
-  connection is unshared. Upstream monitoring publisher/auth/sharing topology
-  is not silently claimed equivalent.
-- ApplicationInsights exporter has payload capture disabled. No OTLP exporter
-  substitution or telemetry redesign is introduced. Fresh gateway request
-  delivery was verified for four exact traces and the expected component;
-  hosted-agent tracing remains unproven.
+Gateway, catalog, aliases, key and telemetry resources now use
+`2025-09-01-preview`, aligned with the [upstream gateway Bicep](../../ai-gateway/main.bicep).
+Foundry account/project/deployment resources use `2025-04-01-preview`.
+The gateway SKU remains omitted. Preview deployment/API availability still
+requires target-specific qualification; an earlier 2026 deployment is not proof.
+This source change does not migrate or alter that deployment.
 
-### Declared parity differences
+The gateway retains create-only headers, backend-replacement semantics and
+`prevent_destroy`. This is not an Azure deletion lock. Alias body changes still
+require replacement; model deployments serialize on their account.
 
-These differences are explicit, not automatically corrected by enabling
-application integration. Existing deployed settings must not be flipped merely
-to make resource bodies look identical.
+| Surface | Remaining difference or decision |
+|---|---|
+| Gateway/MCP safety | Severity inputs remain locally gated pending selected-API qualification. Backend `Microsoft.DefaultV2` is a separate control; neither configuration proves enforcement. |
+| Backend filtering | Terraform pins `Microsoft.DefaultV2`; Bicep omits `raiPolicyName`. Omission is not proof of the effective default. |
+| Model request rate | The bundled profile requests 100 calls/minute per identity; Bicep has no default request-rate policy. An explicit replacement profile can omit it. |
+| Model account | Terraform retains `allowProjectManagement = true`, versus false in Bicep; no live mutation is included. |
+| Registry sharing | Terraform's connection is unshared, versus shared in Bicep. Full-hosted behavior still needs resolution and acceptance. |
+| Foundry access/monitoring | Explicit opt-ins instead of default full-application wiring; narrower separate model/tool roles instead of broad AI Gateway User grants |
+| Insights connection | One project-level Terraform owner, optionally using managed identity; not a claim of identical Bicep account-level topology |
+| Gateway telemetry | Legacy ApplicationInsights exporter, payload capture off. Native OpenTelemetry, generated-DCR readiness/scoped publisher role and Portal dashboard acceptance remain outstanding. |
+| Tool/application lifecycle | No automatic Terraform ToolServer/Toolbox or azd workflow. Credential selection/upload must be explicit. |
 
-| Surface | Bicep path | Terraform path and remaining decision |
-|---|---|---|
-| Gateway API | Core resources and hook use `2025-09-01-preview`. | Core remains `2026-09-01-preview`; the newer published ToolServer body is not interchangeable. Qualify writes before changing versions. |
-| Gateway/model/MCP safety | Medium gateway safety categories are requested. | Gateway safety is not enabled pending qualification. The backend `Microsoft.DefaultV2` binding is not equivalent protection. |
-| Backend safety selection | No explicit `raiPolicyName`. | Explicit `Microsoft.DefaultV2` pin retained; the effective Bicep backend default is not assumed from omission. |
-| Model request rate | No request-rate policy by default. | Bundled profile requests 100 calls/minute per identity. An explicit replacement profile can omit the optional limit; no default is silently changed and enforcement remains unaccepted. |
-| Model account project management | `allowProjectManagement = false`. | `true` retained. Safe in-place mutation is not established; no live flip is included. |
-| Registry connection sharing | `isSharedToAll = true`. | `false` retained. Cross-project semantics and hosted image-pull behavior remain unaccepted. |
-| Insights connection | Account-level managed-identity connection. | One project-level owner; optional managed-identity body and publisher grants. Mirrored GET observations do not justify adding another Terraform owner. |
-| Gateway tool authorization | Broader AI Gateway User grants include tool access. | Existing Models User grants remain; a separate default-off Tools User grant targets only the project. Definition availability is qualified, not assignment propagation or tool invocation. |
-| Tool and credential lifecycle | Existing hook selects a local GitHub credential and owns ToolServer/Toolbox work. | No implicit credential selection or overlapping writer. A separately reviewed whole-resource runner remains required. |
-
-The [tool contract boundary](tool-credential-boundary.md) records source and
-acceptance limits. These are unresolved parity choices, not equivalent-behavior
-claims.
-
-Do not run existing Bicep cleanup/recovery hooks against these Terraform-owned
-resources. Migration, credential rotation, interrupted deployment recovery and
-full teardown need separately reviewed ownership-aware procedures. Do not remove
-`prevent_destroy`, mutate state or delete out of band to bypass an approval stop.
+Do not run Bicep mutating hooks against Terraform-owned resources. Exporter
+kind migration can require deletion/recreation and is not automatic or approved
+by this API-pin change. State adoption, rotation, recovery and teardown need
+separately reviewed ownership-aware procedures. Do not remove `prevent_destroy`
+or mutate state to bypass a stop.

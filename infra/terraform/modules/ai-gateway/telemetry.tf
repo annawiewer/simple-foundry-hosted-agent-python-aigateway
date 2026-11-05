@@ -18,7 +18,7 @@ resource "azapi_resource" "telemetry_exporter" {
   lifecycle {
     precondition {
       condition     = try(length(trimspace(azapi_resource.insights.output.properties.ConnectionString)) > 0, false)
-      error_message = "The API2026 exporter requires the returned gateway Insights ConnectionString; incomplete exporters are rejected."
+      error_message = "The ApplicationInsights exporter requires the returned gateway Insights ConnectionString; incomplete exporters are rejected."
     }
   }
   depends_on = [azapi_resource.role_assignment]

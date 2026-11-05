@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-API = "2026-09-01-preview"
+API = "2025-09-01-preview"
 GATEWAY = "Microsoft.ApiManagement/aigateways"
 PROFILE_PINS = {
     "gpt-latest": ("gpt-6.1-sol", "2026-09-29", 20),
@@ -173,7 +173,7 @@ def check_gateway(resources):
     exporter = one(resources, f"{GATEWAY}/workspaces/telemetryExporters@2025-09-01-preview")
     p = properties(exporter)
     require(p["kind"] == "ApplicationInsights" and p["payloadCapture"] is False and "openTelemetry" not in p,
-            "Retain configured API2026 exporter, without claiming actual delivery")
+            "Retain the legacy exporter until native OpenTelemetry is implemented")
     require(p["applicationInsights"]["connectionString"] == "synthetic-only-not-a-credential",
             "Exporter must use selected monitoring destination")
     require(exporter["parent_id"] == gateway["id"] + "/workspaces/default", "Exporter workspace mismatch")

@@ -1,6 +1,6 @@
 # ai-gateway
 
-Standalone API2026 gateway, system identity, service-owned default workspace,
+Standalone AI Gateway (`2025-09-01-preview`), system identity, service-owned default workspace,
 runtime-key **resource**, Log Analytics/ApplicationInsights and exporter. The
 module never reads or exports the runtime key value.
 

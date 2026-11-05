@@ -1,6 +1,6 @@
 locals {
   gateway_type                  = "Microsoft.ApiManagement/aigateways"
-  gateway_api_version           = "2026-09-01-preview"
+  gateway_api_version           = "2025-09-01-preview"
   gateway_telemetry_api_version = "2025-09-01-preview"
   gateway_uses_existing_subnet  = var.gateway_backend_subnet_id != ""
   gateway_workspace_id          = "${azapi_resource.gateway.id}/workspaces/default"
@@ -32,14 +32,14 @@ resource "azapi_resource" "gateway" {
         for delegation in data.azapi_resource.gateway_backend_subnet[0].output.properties.delegations :
         lower(delegation.properties.serviceName)
       ], "microsoft.app/environments"), false)
-      error_message = "The existing 2026 backend subnet must be delegated to Microsoft.App/environments. The workload does not modify platform-owned subnet configuration."
+      error_message = "The existing backend subnet must be delegated to Microsoft.App/environments. The workload does not modify platform-owned subnet configuration."
     }
     precondition {
       condition = !local.gateway_uses_existing_subnet || try(
         lower(replace(data.azapi_resource.gateway_backend_vnet[0].output.location, " ", "")) == lower(replace(var.location, " ", "")),
         false
       )
-      error_message = "The 2026 backend subnet VNet must be in gateway_location."
+      error_message = "The backend subnet VNet must be in gateway_location."
     }
   }
   timeouts {

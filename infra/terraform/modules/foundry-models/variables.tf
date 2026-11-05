@@ -103,7 +103,7 @@ variable "model_deployments" {
     condition = alltrue([
       for model in var.model_deployments : model.content_safety_severity == null
     ])
-    error_message = "The standalone gateway does not support content_safety_severity. Omit it; this entry binds Foundry deployments to the Microsoft.DefaultV2 backend content filter instead."
+    error_message = "Gateway content_safety_severity is disabled pending qualification of the selected API. Omit it for now; the Microsoft.DefaultV2 backend filter is a separate control, not equivalent gateway safety."
   }
   validation {
     condition = alltrue([for model in var.model_deployments :
@@ -112,6 +112,6 @@ variable "model_deployments" {
         model.request_limit >= 1 && floor(model.request_limit) == model.request_limit
       )
     ])
-    error_message = "request_limit is an optional positive integer requests-per-minute limit for the standalone 2026 entry."
+    error_message = "request_limit is an optional positive integer requests-per-minute limit for the standalone gateway."
   }
 }

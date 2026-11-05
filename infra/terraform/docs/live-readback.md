@@ -65,25 +65,8 @@ Equivalent JSON integer/fractional number representations compare equally;
 booleans are not numbers. Array ordering and substantive field changes are
 not ignored. Expected null fields add no proof of a configured nonnull value.
 
-The November 4 baseline run read 33 resources and compared 237 leaves, including
-identity metadata. It returned `INCOMPLETE` for the six GET omissions already
-qualified in the [evidence map](evidence-map.md#fresh-contribution-bounded-live-proof).
-Neither successful inference nor Terraform no-change planning fills those gaps.
-Keep this receipt alongside, not instead of, a separately reviewed ordinary plan.
-
-The separate November 5 (CET) model-access increment read 35 resources and
-compared 243 leaves, including all eight role assignments. Returned values
-agreed and exactly the same six paths remained omitted: overall `INCOMPLETE`,
-exit 3. Its ordinary exact-input plan independently exited 0/no changes.
-Two role creates and a successful nonsecret output adapter do not prove
-permission propagation, intended-identity authentication or hosted-agent runtime.
-
-The separately qualified monitoring increment read **37 resources/250 leaves**
-and all ten exact role assignments. Five omitted paths remain: three catalog
-`apiFormat` fields, exporter `kind` and registry `credentials`; overall
-`INCOMPLETE`, exit 3. Its ordinary exact-input plan exited 0/no changes.
-Independent account/project connection GETs both returned the intended
-managed-identity body under the original IDs after one Terraform-owned update.
-Both service creation timestamps reset; backing-identity preservation and
-stored credential erasure are not proven. See the
-[monitoring evidence](evidence-map.md#separate-monitoring-configuration-increment).
+Keep receipts alongside, not instead of, a separately reviewed ordinary plan.
+Neither successful inference nor Terraform no-change planning establishes an
+omitted field, credential erasure or permission propagation. The
+[acceptance matrix](evidence-map.md#acceptance-matrix) records the evidence and
+remaining gaps once, without duplicating historical execution journals here.

@@ -174,7 +174,7 @@ run "root_default" {
     condition = (
       output.gateway_endpoint == "https://gateway.example.invalid" &&
       output.gateway_contract.name == "2026" &&
-      alltrue([for k in ["gateway", "catalog", "aliases", "api_keys"] : output.gateway_api_versions[k] == "2026-09-01-preview"]) &&
+      alltrue([for k in ["gateway", "catalog", "aliases", "api_keys"] : output.gateway_api_versions[k] == "2025-09-01-preview"]) &&
       output.gateway_api_versions.telemetry == "2025-09-01-preview" &&
       length(distinct(values(output.resource_groups))) == 3 &&
       output.model_alias_configuration["primary-router"].alias_name == "gpt-latest" &&
@@ -183,7 +183,7 @@ run "root_default" {
       alltrue([for k in ["models", "agents", "storage", "registry"] : output.backend_public_network_access[k] == "Enabled"]) &&
       output.backend_public_network_access.monitoring_ingestion == "Unspecified"
     )
-    error_message = "Fresh root must compose the pinned API2026 three-group baseline and real routed profile."
+    error_message = "Fresh root must compose the pinned 2025 gateway API, three workload groups and real routed profile."
   }
   assert {
     condition = (
