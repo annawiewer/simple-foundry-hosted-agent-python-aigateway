@@ -15,7 +15,7 @@ SPEC = importlib.util.spec_from_file_location(
 ADAPTER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ADAPTER)
 SUBSCRIPTION = "00000000-0000-0000-0000-000000000001"
-BASE = f"/subscriptions/{SUBSCRIPTION}/resourceGroups/fixture/providers/"
+BASE = f"/subscriptions/{SUBSCRIPTION}/resourceGroups/"
 CONTRACT = {
     "version": 1,
     "subscription_id": SUBSCRIPTION,
@@ -23,19 +23,24 @@ CONTRACT = {
     "location": "eastus2",
     "resource_groups": {"agents": "agents", "gateway": "gateway", "models": "models"},
     "gateway": {
-        "id": BASE + "Microsoft.ApiManagement/aigateways/gateway",
+        "id": BASE + "gateway/providers/Microsoft.ApiManagement/aigateways/gateway",
         "endpoint": "https://service-managed.example.invalid",
     },
     "agents": {
-        "project_id": BASE + "Microsoft.CognitiveServices/accounts/agents/projects/project",
+        "account_id": BASE + "agents/providers/Microsoft.CognitiveServices/accounts/agents",
+        "project_id": BASE + "agents/providers/Microsoft.CognitiveServices/accounts/agents/projects/project",
         "project_endpoint": "https://agents.services.ai.azure.com/api/projects/project",
-        "registry_id": BASE + "Microsoft.ContainerRegistry/registries/registry",
+        "registry_id": BASE + "agents/providers/Microsoft.ContainerRegistry/registries/registry",
         "registry_endpoint": "registry.azurecr.io",
         "registry_connection_name": "acr-connection",
     },
     "models": {"aliases": {
-        "primary-router": {"alias_name": "primary", "endpoints": ["/openai/v1/chat/completions"]},
-        "mini-router": {"alias_name": "mini", "endpoints": ["/openai/v1/chat/completions"]},
+        "primary-router": {
+            "alias_name": "primary", "endpoints": ["/openai/v1/chat/completions", "/openai/v1/responses"],
+        },
+        "mini-router": {
+            "alias_name": "mini", "endpoints": ["/openai/v1/chat/completions", "/openai/v1/responses"],
+        },
     }},
 }
 
@@ -89,22 +94,100 @@ class EnvironmentAdapterTests(unittest.TestCase):
             ("endpoint", "https://service-managed.example.invalid/default/models"),
             ("endpoint", "https://service-managed.example.invalid:8443"),
             ("endpoint", "https://service-managed.example.invalid\\evil"),
-            ("id", BASE + "Microsoft.ApiManagement/aigateways/gateway?key=synthetic-secret-marker"),
+            ("id", CONTRACT["gateway"]["id"] + "?key=synthetic-secret-marker"),
         ):
             source = copy.deepcopy(CONTRACT)
             source["gateway"][field] = value
             with self.subTest(value=value), self.assertRaises(ValueError):
                 ADAPTER.environment_mapping(source)
 
-    def test_custom_aliases_require_chat_protocol(self):
+    def test_custom_aliases_accept_responses_only(self):
         source = copy.deepcopy(CONTRACT)
-        source["models"]["aliases"]["custom"] = source["models"]["aliases"].pop("primary-router")
-        self.assertEqual(ADAPTER.environment_mapping(source, "custom")["AZURE_AI_GATEWAY_MODEL"], "primary")
+        aliases = source["models"]["aliases"]
+        aliases["custom-primary"] = aliases.pop("primary-router")
+        aliases["custom-mini"] = aliases.pop("mini-router")
+        for config in aliases.values():
+            config["endpoints"] = ["/openai/v1/responses"]
+        aliases["unselected"] = {"alias_name": "chat-only", "endpoints": ["/openai/v1/chat/completions"]}
+        result = ADAPTER.environment_mapping(source, "custom-primary", "custom-mini")
+        self.assertEqual(result["AZURE_AI_GATEWAY_MODEL"], "primary")
+        self.assertEqual(result["AZURE_AI_GATEWAY_MINI_MODEL"], "mini")
         with self.assertRaises(KeyError):
             ADAPTER.environment_mapping(source)
-        source["models"]["aliases"]["custom"]["endpoints"] = ["/openai/v1/responses"]
+
+    def test_selected_aliases_require_responses_protocol(self):
+        for key in ("custom-primary", "custom-mini"):
+            for endpoints in (["/openai/v1/chat/completions"], [], "/openai/v1/responses", None):
+                source = copy.deepcopy(CONTRACT)
+                aliases = source["models"]["aliases"]
+                aliases["custom-primary"] = aliases.pop("primary-router")
+                aliases["custom-mini"] = aliases.pop("mini-router")
+                aliases[key]["endpoints"] = endpoints
+                with self.subTest(key=key, endpoints=endpoints), self.assertRaisesRegex(ValueError, "Responses"):
+                    ADAPTER.environment_mapping(source, "custom-primary", "custom-mini")
+
+    def test_reject_project_endpoint_for_another_project_or_account(self):
+        for value in (
+            "https://agents.services.ai.azure.com/api/projects/other-project",
+            "https://other-agents.services.ai.azure.com/api/projects/project",
+            "https://agents.services.ai.azure.com.example.invalid/api/projects/project",
+        ):
+            source = copy.deepcopy(CONTRACT)
+            source["agents"]["project_endpoint"] = value
+            with self.subTest(endpoint=value), self.assertRaises(ValueError):
+                ADAPTER.environment_mapping(source)
+
+    def test_reject_project_outside_declared_account(self):
+        for account_id in (
+            CONTRACT["agents"]["account_id"].replace("/accounts/agents", "/accounts/other-agents"),
+            CONTRACT["agents"]["account_id"].replace("/resourceGroups/agents", "/resourceGroups/other-group"),
+        ):
+            source = copy.deepcopy(CONTRACT)
+            source["agents"]["project_id"] = account_id + "/projects/project"
+            source["agents"]["project_endpoint"] = (
+                f"https://{account_id.rsplit('/', 1)[-1]}.services.ai.azure.com/api/projects/project"
+            )
+            with self.subTest(account_id=account_id), self.assertRaises(ValueError):
+                ADAPTER.environment_mapping(source)
+
+    def test_reject_missing_or_invalid_agent_account_id(self):
+        invalid_ids = (
+            None,
+            CONTRACT["agents"]["account_id"].replace(SUBSCRIPTION, "00000000-0000-0000-0000-000000000002"),
+            CONTRACT["agents"]["project_id"],
+        )
+        for account_id in invalid_ids:
+            source = copy.deepcopy(CONTRACT)
+            if account_id is None:
+                del source["agents"]["account_id"]
+            else:
+                source["agents"]["account_id"] = account_id
+            with self.subTest(account_id=account_id), self.assertRaises((ValueError, KeyError)):
+                ADAPTER.environment_mapping(source)
+
+    def test_reject_gateway_resource_group_mismatch(self):
+        source = copy.deepcopy(CONTRACT)
+        source["resource_groups"]["gateway"] = "other-group"
         with self.assertRaises(ValueError):
-            ADAPTER.environment_mapping(source, "custom")
+            ADAPTER.environment_mapping(source)
+
+    def test_resource_relationships_are_case_insensitive(self):
+        for field in ("account_id", "project_id"):
+            source = copy.deepcopy(CONTRACT)
+            source["gateway"]["id"] = source["gateway"]["id"].upper()
+            source["agents"][field] = source["agents"][field].upper()
+            with self.subTest(field=field):
+                result = ADAPTER.environment_mapping(source)
+                self.assertEqual(result["AZURE_AI_PROJECT_ENDPOINT"], CONTRACT["agents"]["project_endpoint"])
+                self.assertEqual(result["AI_GATEWAY_RESOURCE_GROUP"], "gateway")
+
+    def test_service_owned_registry_hostnames_are_not_inferred_from_arm_names(self):
+        for hostname in ("registry-a1b2c3d4.azurecr.io", "unrelated.example.invalid"):
+            source = copy.deepcopy(CONTRACT)
+            source["agents"]["registry_endpoint"] = hostname
+            result = ADAPTER.environment_mapping(source)
+            self.assertEqual(result["AZURE_CONTAINER_REGISTRY_ENDPOINT"], hostname)
+            self.assertEqual(result["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"], CONTRACT["agents"]["registry_id"])
 
     def test_cli_json_only_and_no_mutation(self):
         stdout, stderr = io.StringIO(), io.StringIO()

@@ -1,11 +1,36 @@
 # Source-to-module evidence map
 
-This is a behavior-preserving packaging milestone, not full parity with the
-Bicep-backed hosted-agent sample. Historical source proof and fresh contribution
-checks from November 4, 2026 and the November 5 (CET) opt-in increment are
-separated below; none establishes complete hosted-agent/azd parity.
+This is an infrastructure foundation with separately qualified application
+integration increments, not full parity with the Bicep-backed hosted-agent
+sample. Use the current summary below; the subsequent dated checkpoints explain
+its provenance and must not be combined into inflated test or acceptance counts.
+
+## Current acceptance: November 5, 2026
+
+| Area | Latest established evidence | Remaining boundary |
+|---|---|---|
+| Terraform offline contracts | **PASS:** 53 native mocked runs, semantic inspection of those same 53 plans, and 25 Python tests (14 adapter, eleven readback). All 13 positive root handoffs feed the real adapter, including Responses-only and custom aliases. Five locked roots initialize and validate; formatting, structure and script parsing pass. | No Azure deployment or runtime acceptance. The 13 handoffs are checks within the 53 plans, not extra runs. |
+| Latest deployed configuration | **Qualified:** monitoring-enabled graph has 37 successful resource GETs, ten exact scoped roles, 250 matching compared leaves and an ordinary exact-input no-change plan. | Five requested properties are omitted by GET; full requested-body status is `INCOMPLETE`. Storage uses the explicit policy-aligned `Disabled` override, not an accepted private hosted-compute path. |
+| Actual application model client | **PASS:** one local request through the unchanged shared application client returned HTTP 200 for the primary alias on Responses. Api-Key only; at most 32 output tokens, `store=false`, no tools, streaming, redirects or SDK retries. | Not a deployed hosted agent, managed-identity invocation, mini-alias application call, Toolbox or real GitHub operation. This is separate from the four earlier raw-API requests. |
+| Application and container CI | **PASS at `97ecb9b`:** Bicep builds, Bash lifecycle/model-registration checks, 18 application unit tests, unchanged frozen image build and actual container smoke. Smoke covers Terraform exclusion, readiness, both Responses modes and mocked Toolbox initialization/discovery. | Mocks do not establish real tool access or hosted deployment. Local package-download TLS remains unresolved; successful CI proves the image path, not that local issue's cause. |
+| Complete Bicep/azd workflow | **Not accepted:** existing Bicep/application/`azure.yaml` defaults are preserved. | ToolServer/Toolbox and explicit credential delivery, automatic Terraform azd integration, hosted agent/routine, intended-identity authorization, governance enforcement and lifecycle gates remain open. |
+
+The adapter now requires Responses support on both selected aliases and rejects
+inconsistent gateway group/ID and agent account/project ID/URL relationships.
+Its version-1 shape and 16-field mapping (17 with gateway location) are unchanged.
+Native positive fixtures were corrected to use the configured resource names;
+the checker does not rewrite plan outputs to make them pass. Gateway and registry
+hostname ownership still needs independent provenance, not string syntax alone.
+
+Offline CI remains credential-free. These local/live observations and the
+exact-commit application CI result have different scopes; none should be
+relabeled complete hosted-agent acceptance. Protected receipts are retained
+outside the contribution.
 
 ## Fresh contribution: bounded live proof
+
+**Dated foundation checkpoint: November 4, 2026.** The 33-resource and 41-case
+observations in this section precede the later opt-in and adapter increments.
 
 The self-contained three-group root was deployed into a separately authorized,
 isolated Sweden Central environment using Terraform 1.11.4 and locked AzAPI
@@ -21,7 +46,7 @@ and APIs remain those of the bundled profile.
 | Policy alignment and idempotence | **PASS with explicit input:** inherited management-group Modify policies disabled Storage public access. Set `agent_storage_public_network_access = "Disabled"`; the validated correction changed only Storage ACL Allow to Deny, with public access remaining Disabled. The dependent connection resolved without a change. Ordinary exact-input plan then exited 0 with no changes. Model/agent accounts and ACR remained Enabled. |
 | Bounded key-auth runtime | **PASS:** both aliases returned HTTP 200 on Chat Completions and Responses with expected envelopes; missing and invalid keys returned HTTP 401. Credentials were acquired outside Terraform and held only in process memory. |
 | Gateway request telemetry | **PASS:** a direct `AppRequests` query matched all four original request `OperationId` values and the exact expected AppInsights component. An earlier broad `search *` query returned a false negative; no exporter redesign or extra inference was needed. No payload capture was enabled. |
-| Applicable upstream checks | 18 application unit tests and the Bicep model-registration contract passed. The unchanged upstream Bash lifecycle test hit its two-second transition bound on Windows. Linux/GitHub Actions and container smoke were not executed. |
+| Applicable upstream checks | At this checkpoint, 18 application unit tests and the Bicep model-registration contract passed. The unchanged upstream Bash lifecycle test hit its two-second transition bound on Windows; Linux/GitHub Actions and container smoke had not yet run. Their later successful CI result is recorded in the current summary above. |
 
 This is the root with a Storage-only override, **not acceptance of unchanged
 network defaults in every policy environment**, a private Storage data path,
@@ -41,11 +66,12 @@ including identity metadata, and the same six GET omissions; exit 3
 
 ## Separate opt-in integration increment
 
-The current canonical offline suite passes **49 native mocked runs and semantic
-inspections, plus 18 Python tests** (seven adapter and eleven readback cases).
-All five roots validate with the same locks; formatting, structure and
-PowerShell parsing pass. This adds coverage without relabeling the earlier
-41-case extraction run or its dated live receipts.
+**Dated model-access checkpoint: November 5, 2026 CET.** At this increment the
+canonical offline suite passed **49 native mocked runs and semantic inspections,
+plus 18 Python tests** (seven adapter and eleven readback cases).
+All five roots validated with the same locks; formatting, structure and
+PowerShell parsing passed. These are the results at that checkpoint, not the
+current suite counts or a relabeling of the earlier 41-case extraction.
 
 | Feature | Implemented and tested boundary |
 |---|---|
@@ -67,10 +93,11 @@ published schema was not silently substituted into the tested deployment.
 
 ## Separate monitoring configuration increment
 
-The canonical suite now passes **53 native mocked runs and semantic inspections,
-plus 18 Python tests**, five locked root validations, formatting, structure and
-PowerShell parsing. Four focused module/root/combined/independent-example cases
-cover the default-off in-place Insights auth switch and exact publisher grants.
+**Dated monitoring checkpoint: November 5, 2026 CET.** The canonical suite then
+passed **53 native mocked runs and semantic inspections, plus 18 Python tests**,
+five locked root validations, formatting, structure and PowerShell parsing.
+Four focused module/root/combined/independent-example cases cover the default-off
+in-place Insights auth switch and exact publisher grants.
 The default graph is still 33 resources/six roles. These results do not replace
 the dated 41-case foundation or 49-case model-access evidence above.
 
@@ -164,12 +191,14 @@ implementation, not historical wrapper addresses. Its actual test owners are:
 | [`agents.tftest.hcl`](../tests/agents.tftest.hcl) | Independent support module, backend-access/Storage-only controls and optional exact monitoring connection/grants |
 | [`examples.tftest.hcl`](../tests/examples.tftest.hcl) | Four runnable roots, external-pregrant mode, independent Storage-only and monitoring opt-ins |
 | [`check_contracts.py`](../tests/check_contracts.py) | Bundled dependencies/ownership/lifecycle structure and semantic inspection of mocked API bodies, grants, routes and support resources |
-| [`test_environment_adapter.py`](../tests/test_environment_adapter.py) | Explicit allow-listed version-1 environment mapping, schema/protocol guards, secret exclusion and no mutation |
+| [`test_environment_adapter.py`](../tests/test_environment_adapter.py) | Explicit allow-listed version-1 environment mapping, Responses and cross-reference guards, secret exclusion and no mutation |
 | [`test_live_readback.py`](../tests/test_live_readback.py) | GET-only safe receipts, explicit context/scope, omission status, numeric equivalence and no overwrite |
 
 The runner also performs locked backend-disabled initialization,
 formatting/validation and PowerShell parsing. These are offline checks only;
-the 41-case extraction, 49-case integration and 53-case monitoring runs are distinguished above.
+the 41-case extraction, 49-case integration and 53-case monitoring checkpoints
+are distinguished above. The current adapter increment retains 53 native plans,
+checks 13 root handoffs within them and raises the Python suite from 18 to 25.
 They do not turn source live proof
 into extracted-destination acceptance. The old private/legacy
 scenario suites are not silently included in these families.
@@ -184,7 +213,7 @@ Exclusion from this extraction does not erase historical capability or proof.
 | Legacy gateway contracts, alternate network profiles, external-network diagnostics and private hosted-agent scenario framework | Deliberately outside this API2026 structural baseline. Source tests for these scenarios must not be relabeled as destination coverage. |
 | Gateway/MCP `contentSafety` | API2026 source rejects unsupported gateway safety input. Backend `Microsoft.DefaultV2` is a different surface, not equivalent MCP/gateway protection or enforcement proof. |
 | RemoteTool, GitHub MCP ToolServer, Toolbox and GitHub credential workflow | RemoteTool is now an opt-in explicit-endpoint configuration, not accepted tool runtime. ToolServer, Toolbox and credential delivery remain missing. No stub resource, token path or implicit personal CLI credential upload is supplied; see the independent contract boundary above. |
-| Terraform-backed azd adapter, hosted image/Responses agent, scheduled routine | Explicit nonsecret environment JSON mapping is implemented/tested; automatic azd deployment integration, hosted image/agent and routine remain unimplemented/unaccepted. Existing Bicep/app/`azure.yaml` behavior remains unchanged. Do not run Bicep recovery hooks against Terraform-owned resources. |
+| Terraform-backed azd adapter, hosted image/Responses agent, scheduled routine | Explicit nonsecret environment JSON mapping and bounded local application-client key auth are accepted within the limits above. The shared image builds and passes mocked container smoke in CI. Automatic Terraform azd integration and deployment of the hosted agent/routine remain unimplemented/unaccepted. Existing Bicep/app/`azure.yaml` behavior remains unchanged. Do not run Bicep recovery hooks against Terraform-owned resources. |
 | Controlled failover, policy exhaustion/denial, intended Foundry identity authorization, hosted-agent tracing and rotation/recovery/complete teardown | Unaccepted gates. Fresh key runtime, gateway request telemetry and a no-change foundation plan do not prove them. |
 
 The fresh checks above used a selected target and approved bounds. Further

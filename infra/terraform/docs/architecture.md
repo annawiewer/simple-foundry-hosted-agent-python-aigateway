@@ -192,7 +192,24 @@ It prints only an allow-listed JSON environment mapping for manual review.
 It never calls Terraform/Azure/azd, changes the environment, writes an env file
 or runs lifecycle hooks. Original version-1 contracts remain supported. Custom
 profiles can select `--model-alias-key` and `--mini-model-alias-key`; the chosen
-aliases must support the application's Chat Completions protocol.
+primary and mini aliases must both advertise `/openai/v1/responses`. The
+installed shared application's `OpenAIChatClient` sends Responses requests to
+`/default/models/openai/v1/responses`. Responses-only aliases are accepted;
+Chat-Completions-only aliases are rejected. The bundled aliases advertise both
+protocols, so this corrects custom-profile compatibility rather than proving a
+default-profile runtime failure.
+
+The adapter checks the existing agent account ID, the project's ARM parent and
+its URL's account/project names against the independent IDs, using the current
+agents module's account-name subdomain convention. It also checks the gateway
+resource group against its ARM ID. Resource identity comparisons are
+case-insensitive; the version-1 input shape and exported field set are unchanged.
+Registry hostnames and gateway origins are syntax-checked, not independently
+bound to their ARM IDs: these fields do not prove that relationship. In
+particular, service-owned hash-qualified registry hostnames remain valid; no
+`<registry-name>.azurecr.io` equality rule is imposed. Authoritative binding
+requires a richer, independently sourced resource-readback/provenance contract,
+not a second copy of the supplied hostname.
 
 The mapping supplies established infrastructure IDs, locations, groups,
 project/registry endpoints, gateway origin and aliases, **not secrets,

@@ -389,7 +389,7 @@ def check_plans():
                  "reject_remote_tool_http", "reject_remote_tool_credentials", "reject_remote_tool_query",
                  "reject_remote_tool_origin", "reject_duplicate_foundry_gateway_owners"}
     expected |= {"agents_monitoring_integration", "root_monitoring_integration",
-                 "root_all_integrations", "agent_support_monitoring_integration"}
+                 "root_all_integrations", "agent_support_monitoring_integration", "alias_protocol_intersection"}
     require(expected <= plans.keys(), f"Missing real mock plans: {sorted(expected - plans.keys())}")
     profile = json.loads((ROOT / "model-profile.json").read_text(encoding="utf-8-sig"))
     for name, plan in plans.items():
@@ -534,13 +534,38 @@ def check_plans():
     spec = importlib.util.spec_from_file_location("export_environment", ROOT / "scripts" / "export_environment.py")
     adapter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adapter)
-    contract = plans["root_default"]["output_changes"]["deployment_contract"]["after"]
-    mapping = adapter.environment_mapping(contract)
-    require(mapping["AZURE_AI_GATEWAY_MODEL"] == "gpt-latest" and
-            mapping["AZURE_AI_GATEWAY_MINI_MODEL"] == "gpt-mini-latest" and
-            mapping["AZURE_AI_GATEWAY_ENDPOINT"] == "https://gateway.example.invalid/" and
-            "TOOLBOX_ENDPOINT" not in mapping and "AZURE_AI_GATEWAY_API_KEY" not in mapping,
-            "Actual root output must feed the explicit nonsecret application adapter")
+    application_plans = {name: plan for name, plan in plans.items()
+                         if name.startswith("root_") or name == "alias_protocol_intersection"}
+    for name, plan in application_plans.items():
+        for resource in resource_map(plan).values():
+            resource_type = resource["type"].split("@")[0]
+            if resource_type == "Microsoft.Resources/resourceGroups":
+                resource_path = "/resourceGroups"
+            elif resource_type in {GATEWAY, "Microsoft.CognitiveServices/accounts",
+                                   "Microsoft.Storage/storageAccounts", "Microsoft.ContainerRegistry/registries"}:
+                resource_path = "/providers/" + resource_type
+            elif resource_type in {"Microsoft.CognitiveServices/accounts/projects",
+                                   "Microsoft.CognitiveServices/accounts/deployments"}:
+                resource_path = "/" + resource_type.rsplit("/", 1)[-1]
+            else:
+                continue
+            expected_id = resource["parent_id"] + resource_path + "/" + resource["name"]
+            require(resource["id"].lower() == expected_id.lower(),
+                    f"{name}: mock ID must match the planned parent, type and name: {resource_type}")
+        contract = plan["output_changes"]["deployment_contract"]["after"]
+        keys = ("custom-route", "custom-route") if name == "root_replacement_profile" else (
+            "primary-router", "mini-router")
+        try:
+            mapping = adapter.environment_mapping(contract, *keys)
+        except (ValueError, KeyError, TypeError) as error:
+            raise AssertionError(f"{name}: native output is incompatible with the environment adapter: {error}") from error
+        expected_aliases = ("custom-callable", "custom-callable") if name == "root_replacement_profile" else (
+            "gpt-latest", "gpt-mini-latest")
+        require((mapping["AZURE_AI_GATEWAY_MODEL"], mapping["AZURE_AI_GATEWAY_MINI_MODEL"]) == expected_aliases and
+                mapping["AZURE_AI_GATEWAY_ENDPOINT"] == plan["output_changes"]["gateway_endpoint"]["after"] + "/" and
+                "TOOLBOX_ENDPOINT" not in mapping and "AZURE_AI_GATEWAY_API_KEY" not in mapping,
+                f"{name}: actual root output must feed the explicit nonsecret application adapter")
+    print(f"PASS {len(application_plans)} native root environment handoffs, including Responses-only aliases")
     revised = resource_map(plans["root_backend_revision"])
     gateway_address = "module.ai_gateway.azapi_resource.gateway"
     require(default[gateway_address]["name"] == revised[gateway_address]["name"], "Backend revision renamed retained gateway")

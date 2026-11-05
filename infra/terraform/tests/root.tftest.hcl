@@ -23,26 +23,27 @@ variables {
   gateway_location = "swedencentral"
 }
 
+# Literal mock IDs must follow the names generated from these synthetic inputs.
 override_resource {
   target          = azapi_resource.resource_group["gateway"]
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway" }
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway" }
 }
 override_resource {
   target          = azapi_resource.resource_group["models"]
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models" }
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models" }
 }
 override_resource {
   target          = azapi_resource.resource_group["agents"]
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents" }
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-agents" }
 }
 override_resource {
   target          = module.ai_gateway.azapi_resource.gateway
   override_during = plan
   values = {
-    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture"
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957"
     output = { properties = { frontend = { defaultHostname = "gateway.example.invalid" } } }
     identity = {
       type         = "SystemAssigned"
@@ -56,30 +57,30 @@ override_resource {
   target          = module.foundry_models.azapi_resource.models
   override_during = plan
   values = {
-    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models/providers/Microsoft.CognitiveServices/accounts/models"
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-470daa23c957"
     output = { properties = { endpoint = "https://models.example.invalid/" } }
   }
 }
 override_resource {
   target          = module.foundry_models.azapi_resource.model_deployment["gpt-latest"]
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models/providers/Microsoft.CognitiveServices/accounts/models/deployments/gpt-latest" }
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-470daa23c957/deployments/gpt-latest" }
 }
 override_resource {
   target          = module.foundry_models.azapi_resource.model_deployment["gpt-6-sol"]
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models/providers/Microsoft.CognitiveServices/accounts/models/deployments/gpt-6-sol" }
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-470daa23c957/deployments/gpt-6-sol" }
 }
 override_resource {
   target          = module.foundry_models.azapi_resource.model_deployment["gpt-mini-latest"]
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models/providers/Microsoft.CognitiveServices/accounts/models/deployments/gpt-mini-latest" }
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-470daa23c957/deployments/gpt-mini-latest" }
 }
 override_resource {
   target          = module.foundry_agents.azapi_resource.agents
   override_during = plan
   values = {
-    id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.CognitiveServices/accounts/agents"
+    id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-agents/providers/Microsoft.CognitiveServices/accounts/aiagents-470daa23c957"
     identity = {
       type         = "SystemAssigned"
       principal_id = "00000000-0000-0000-0000-000000000007"
@@ -92,7 +93,7 @@ override_resource {
   target          = module.foundry_agents.azapi_resource.project
   override_during = plan
   values = {
-    id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.CognitiveServices/accounts/agents/projects/project"
+    id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-agents/providers/Microsoft.CognitiveServices/accounts/aiagents-470daa23c957/projects/proj-470daa23c957"
     identity = {
       type         = "SystemAssigned"
       principal_id = "00000000-0000-0000-0000-000000000004"
@@ -105,7 +106,7 @@ override_resource {
   target          = module.foundry_agents.azapi_resource.storage
   override_during = plan
   values = {
-    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.Storage/storageAccounts/storage"
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-agents/providers/Microsoft.Storage/storageAccounts/st470daa23c957"
     output = { properties = { primaryEndpoints = { blob = "https://storage.example.invalid/" } } }
   }
 }
@@ -113,7 +114,7 @@ override_resource {
   target          = module.foundry_agents.azapi_resource.registry
   override_during = plan
   values = {
-    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.ContainerRegistry/registries/registry"
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-agents/providers/Microsoft.ContainerRegistry/registries/acr470daa23c957"
     output = { properties = { loginServer = "registry.example.invalid" } }
   }
 }
@@ -121,35 +122,35 @@ override_resource {
   target          = module.ai_gateway.azapi_resource.insights
   override_during = plan
   values = {
-    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.Insights/components/gateway"
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.Insights/components/gateway"
     output = { properties = { ConnectionString = "synthetic-only-not-a-credential" } }
   }
 }
 override_resource {
   target          = module.ai_gateway.azapi_resource.foundry_provider[0]
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture/workspaces/default/modelProviders/foundry" }
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957/workspaces/default/modelProviders/foundry" }
 }
 override_resource {
   target          = module.ai_gateway.azapi_resource.catalog_model["gpt-latest"]
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture/workspaces/default/modelProviders/foundry/models/gpt-latest" }
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957/workspaces/default/modelProviders/foundry/models/gpt-latest" }
 }
 override_resource {
   target          = module.ai_gateway.azapi_resource.catalog_model["gpt-6-sol"]
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture/workspaces/default/modelProviders/foundry/models/gpt-6-sol" }
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957/workspaces/default/modelProviders/foundry/models/gpt-6-sol" }
 }
 override_resource {
   target          = module.ai_gateway.azapi_resource.catalog_model["gpt-mini-latest"]
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture/workspaces/default/modelProviders/foundry/models/gpt-mini-latest" }
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957/workspaces/default/modelProviders/foundry/models/gpt-mini-latest" }
 }
 override_resource {
   target          = module.foundry_agents.azapi_resource.insights
   override_during = plan
   values = {
-    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.Insights/components/agents"
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-agents/providers/Microsoft.Insights/components/agents"
     output = { properties = { ConnectionString = "synthetic-only-not-a-credential" } }
   }
 }
@@ -232,7 +233,7 @@ run "root_remote_tool" {
     target          = module.ai_gateway.azapi_resource.gateway
     override_during = plan
     values = {
-      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture"
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-gateway/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957"
       output = { properties = { frontend = { defaultHostname = "service-managed-123.gateway.example.invalid" } } }
       identity = {
         type         = "SystemAssigned"
@@ -351,6 +352,126 @@ run "root_custom" {
 run "root_single_group" {
   command = plan
   variables { api2026_resource_group_name = "single-fixture" }
+  override_resource {
+    target          = azapi_resource.resource_group["gateway"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture" }
+  }
+  override_resource {
+    target          = module.ai_gateway.azapi_resource.gateway
+    override_during = plan
+    values = {
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957"
+      output = { properties = { frontend = { defaultHostname = "gateway.example.invalid" } } }
+      identity = {
+        type         = "SystemAssigned"
+        principal_id = "00000000-0000-0000-0000-000000000002"
+        tenant_id    = "00000000-0000-0000-0000-000000000003"
+        identity_ids = []
+      }
+    }
+  }
+  override_resource {
+    target          = module.ai_gateway.azapi_resource.insights
+    override_during = plan
+    values = {
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.Insights/components/gateway"
+      output = { properties = { ConnectionString = "synthetic-only-not-a-credential" } }
+    }
+  }
+  override_resource {
+    target          = module.ai_gateway.azapi_resource.foundry_provider[0]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957/workspaces/default/modelProviders/foundry" }
+  }
+  override_resource {
+    target          = module.ai_gateway.azapi_resource.catalog_model["gpt-latest"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957/workspaces/default/modelProviders/foundry/models/gpt-latest" }
+  }
+  override_resource {
+    target          = module.ai_gateway.azapi_resource.catalog_model["gpt-6-sol"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957/workspaces/default/modelProviders/foundry/models/gpt-6-sol" }
+  }
+  override_resource {
+    target          = module.ai_gateway.azapi_resource.catalog_model["gpt-mini-latest"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.ApiManagement/aigateways/aigw-470daa23c957/workspaces/default/modelProviders/foundry/models/gpt-mini-latest" }
+  }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.models
+    override_during = plan
+    values = {
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.CognitiveServices/accounts/aimodels-470daa23c957"
+      output = { properties = { endpoint = "https://models.example.invalid/" } }
+    }
+  }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.model_deployment["gpt-latest"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.CognitiveServices/accounts/aimodels-470daa23c957/deployments/gpt-latest" }
+  }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.model_deployment["gpt-6-sol"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.CognitiveServices/accounts/aimodels-470daa23c957/deployments/gpt-6-sol" }
+  }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.model_deployment["gpt-mini-latest"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.CognitiveServices/accounts/aimodels-470daa23c957/deployments/gpt-mini-latest" }
+  }
+  override_resource {
+    target          = module.foundry_agents.azapi_resource.agents
+    override_during = plan
+    values = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.CognitiveServices/accounts/aiagents-470daa23c957"
+      identity = {
+        type         = "SystemAssigned"
+        principal_id = "00000000-0000-0000-0000-000000000007"
+        tenant_id    = "00000000-0000-0000-0000-000000000003"
+        identity_ids = []
+      }
+    }
+  }
+  override_resource {
+    target          = module.foundry_agents.azapi_resource.project
+    override_during = plan
+    values = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.CognitiveServices/accounts/aiagents-470daa23c957/projects/proj-470daa23c957"
+      identity = {
+        type         = "SystemAssigned"
+        principal_id = "00000000-0000-0000-0000-000000000004"
+        tenant_id    = "00000000-0000-0000-0000-000000000003"
+        identity_ids = []
+      }
+    }
+  }
+  override_resource {
+    target          = module.foundry_agents.azapi_resource.storage
+    override_during = plan
+    values = {
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.Storage/storageAccounts/st470daa23c957"
+      output = { properties = { primaryEndpoints = { blob = "https://storage.example.invalid/" } } }
+    }
+  }
+  override_resource {
+    target          = module.foundry_agents.azapi_resource.registry
+    override_during = plan
+    values = {
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.ContainerRegistry/registries/acr470daa23c957"
+      output = { properties = { loginServer = "registry.example.invalid" } }
+    }
+  }
+  override_resource {
+    target          = module.foundry_agents.azapi_resource.insights
+    override_during = plan
+    values = {
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/single-fixture/providers/Microsoft.Insights/components/agents"
+      output = { properties = { ConnectionString = "synthetic-only-not-a-credential" } }
+    }
+  }
   assert {
     condition     = length(distinct(values(output.resource_groups))) == 1 && output.gateway_contract.single_resource_group && !output.gateway_contract.private_lab
     error_message = "Single-group composition is explicit and must not silently enable the excluded private lab."
@@ -391,7 +512,7 @@ run "root_replacement_profile" {
   override_resource {
     target          = module.foundry_models.azapi_resource.model_deployment["custom-model"]
     override_during = plan
-    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models/providers/Microsoft.CognitiveServices/accounts/models/deployments/custom-model" }
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-470daa23c957/deployments/custom-model" }
   }
   assert {
     condition = (
@@ -408,6 +529,71 @@ run "root_replacement_profile" {
 run "root_backend_revision" {
   command = plan
   variables { backend_revision = "rebuild-2" }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.models
+    override_during = plan
+    values = {
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-1fa30dca0df7"
+      output = { properties = { endpoint = "https://models.example.invalid/" } }
+    }
+  }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.model_deployment["gpt-latest"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-1fa30dca0df7/deployments/gpt-latest" }
+  }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.model_deployment["gpt-6-sol"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-1fa30dca0df7/deployments/gpt-6-sol" }
+  }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.model_deployment["gpt-mini-latest"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-1fa30dca0df7/deployments/gpt-mini-latest" }
+  }
+  override_resource {
+    target          = module.foundry_agents.azapi_resource.agents
+    override_during = plan
+    values = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-agents/providers/Microsoft.CognitiveServices/accounts/aiagents-1fa30dca0df7"
+      identity = {
+        type         = "SystemAssigned"
+        principal_id = "00000000-0000-0000-0000-000000000007"
+        tenant_id    = "00000000-0000-0000-0000-000000000003"
+        identity_ids = []
+      }
+    }
+  }
+  override_resource {
+    target          = module.foundry_agents.azapi_resource.project
+    override_during = plan
+    values = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-agents/providers/Microsoft.CognitiveServices/accounts/aiagents-1fa30dca0df7/projects/proj-1fa30dca0df7"
+      identity = {
+        type         = "SystemAssigned"
+        principal_id = "00000000-0000-0000-0000-000000000004"
+        tenant_id    = "00000000-0000-0000-0000-000000000003"
+        identity_ids = []
+      }
+    }
+  }
+  override_resource {
+    target          = module.foundry_agents.azapi_resource.storage
+    override_during = plan
+    values = {
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-agents/providers/Microsoft.Storage/storageAccounts/st1fa30dca0df7"
+      output = { properties = { primaryEndpoints = { blob = "https://storage.example.invalid/" } } }
+    }
+  }
+  override_resource {
+    target          = module.foundry_agents.azapi_resource.registry
+    override_during = plan
+    values = {
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-agents/providers/Microsoft.ContainerRegistry/registries/acr1fa30dca0df7"
+      output = { properties = { loginServer = "registry.example.invalid" } }
+    }
+  }
   assert {
     condition     = local.backend_token != local.resource_token
     error_message = "An explicit backend revision must isolate rebuilt backend names without replacing the gateway."

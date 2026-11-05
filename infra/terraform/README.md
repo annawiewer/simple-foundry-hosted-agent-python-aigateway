@@ -4,14 +4,16 @@ A self-contained, fresh-deployment Terraform alternative for the standalone
 AI Gateway and Foundry support infrastructure. Existing Bicep, application and
 `azure.yaml` defaults are unchanged.
 
-**Status:** bounded live foundation verified on November 4, 2026, not full
-hosted-agent/azd parity. The fresh three-group root passed creation, scoped
-role readback, key-auth inference, no-change planning and correlated gateway
-request telemetry with an explicit Storage-only `Disabled` override.
-See the [exact evidence and remaining gates](docs/evidence-map.md#fresh-contribution-bounded-live-proof).
-The separate opt-in model-access increment was verified on November 5
-(CET): two new roles, 35 successful resource GETs/eight matched roles and an
-exact-input no-change plan. Intended-identity application runtime is not accepted.
+**Status, November 5, 2026:** bounded infrastructure and local application-client
+checks passed, as did the full application/container CI. **Full hosted-agent/azd
+parity is not accepted.** The latest infrastructure checkpoint returned
+37 successful resource GETs and ten matched roles, with five requested fields
+omitted by Azure readback; full requested-body acceptance remains incomplete.
+The actual application client passed one key-auth Responses request, not hosted
+identity or tool execution. See the single
+[current acceptance summary and remaining gates](docs/evidence-map.md#current-acceptance-november-5-2026);
+earlier 33- and 35-resource checkpoints remain dated evidence, not the current
+combined configuration.
 
 ## Start here
 

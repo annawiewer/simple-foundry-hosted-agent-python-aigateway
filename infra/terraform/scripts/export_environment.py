@@ -81,12 +81,20 @@ def environment_mapping(document, model_alias_key="primary-router", mini_model_a
     gateway = object_value(contract["gateway"])
     agents = object_value(contract["agents"])
     aliases = object_value(object_value(contract["models"])["aliases"])
+    gateway_group = name(groups["gateway"])
     gateway_id = arm_id(gateway["id"], r"Microsoft\.ApiManagement/aigateways/[A-Za-z0-9_.-]+", subscription)
+    if gateway_id.split("/")[4].casefold() != gateway_group.casefold():
+        raise ValueError("The gateway resource group must match its resource ID.")
+    account_id = arm_id(
+        agents["account_id"], r"Microsoft\.CognitiveServices/accounts/[A-Za-z0-9_.-]+", subscription
+    )
     project_id = arm_id(
         agents["project_id"],
         r"Microsoft\.CognitiveServices/accounts/[A-Za-z0-9_.-]+/projects/[A-Za-z0-9_.-]+",
         subscription,
     )
+    if project_id.rsplit("/", 2)[0].casefold() != account_id.casefold():
+        raise ValueError("The project must belong to the declared agent account.")
     registry_id = arm_id(
         agents["registry_id"], r"Microsoft\.ContainerRegistry/registries/[A-Za-z0-9]+", subscription
     )
@@ -94,8 +102,15 @@ def environment_mapping(document, model_alias_key="primary-router", mini_model_a
     if urlsplit(gateway_endpoint).path not in ("", "/"):
         raise ValueError("The gateway endpoint must be an origin, not a model or MCP route.")
     project_endpoint = endpoint(agents["project_endpoint"])
-    if not re.fullmatch(r"/api/projects/[A-Za-z0-9_.-]+", urlsplit(project_endpoint).path):
+    project_url = urlsplit(project_endpoint)
+    project_path = re.fullmatch(r"/api/projects/([A-Za-z0-9_.-]+)", project_url.path)
+    if not project_path:
         raise ValueError("Expected an established Foundry project endpoint.")
+    if (
+        project_url.hostname != account_id.rsplit("/", 1)[-1].lower() + ".services.ai.azure.com"
+        or project_path[1].casefold() != project_id.rsplit("/", 1)[-1].casefold()
+    ):
+        raise ValueError("The project endpoint must match the declared account and project IDs.")
     registry_endpoint = text(agents["registry_endpoint"])
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", registry_endpoint):
         raise ValueError("Expected a registry hostname, not a URL or credential.")
@@ -103,8 +118,8 @@ def environment_mapping(document, model_alias_key="primary-router", mini_model_a
     def alias(key):
         config = object_value(aliases[key])
         endpoints = config["endpoints"]
-        if not isinstance(endpoints, list) or "/openai/v1/chat/completions" not in endpoints:
-            raise ValueError("Selected alias must advertise the application's chat-completions protocol.")
+        if not isinstance(endpoints, list) or "/openai/v1/responses" not in endpoints:
+            raise ValueError("Selected alias must advertise the application's Responses protocol.")
         return name(config["alias_name"])
 
     result = {
@@ -112,7 +127,7 @@ def environment_mapping(document, model_alias_key="primary-router", mini_model_a
         "AZURE_SUBSCRIPTION_ID": subscription,
         "AZURE_LOCATION": text(contract["location"]),
         "AZURE_RESOURCE_GROUP": name(groups["agents"]),
-        "AI_GATEWAY_RESOURCE_GROUP": name(groups["gateway"]),
+        "AI_GATEWAY_RESOURCE_GROUP": gateway_group,
         "AZURE_AI_PROJECT_ENDPOINT": project_endpoint,
         "AZURE_AI_PROJECT_ID": project_id,
         "AZURE_CONTAINER_REGISTRY_ENDPOINT": registry_endpoint,
