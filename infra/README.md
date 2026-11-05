@@ -2,6 +2,11 @@
 
 Run the commands in this README from the `infra/` directory.
 
+For the API2026 Terraform infrastructure baseline, see
+[`terraform/`](terraform/README.md). It provides a separate Terraform-native
+composition and independent examples; it is not yet a replacement for the
+complete Bicep/azd application workflow described below.
+
 The subscription-scoped [`main.bicep`](main.bicep) template creates three
 resource groups and deploys one module into each:
 

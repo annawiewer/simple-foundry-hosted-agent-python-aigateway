@@ -1,0 +1,494 @@
+mock_provider "azapi" {
+  override_during = plan
+  mock_resource "azapi_resource" {
+    defaults = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/mock/providers/Microsoft.Insights/components/mock"
+      output = {
+        properties = {
+          ConnectionString = "synthetic-only-not-a-credential"
+          endpoint         = "https://models.example.invalid/"
+          frontend         = { defaultHostname = "gateway.example.invalid" }
+          primaryEndpoints = { blob = "https://storage.example.invalid/" }
+          loginServer      = "registry.example.invalid"
+        }
+      }
+    }
+  }
+}
+
+variables {
+  subscription_id  = "00000000-0000-0000-0000-000000000001"
+  environment_name = "offline-fixture"
+  location         = "eastus2"
+  gateway_location = "swedencentral"
+}
+
+override_resource {
+  target          = azapi_resource.resource_group["gateway"]
+  override_during = plan
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway" }
+}
+override_resource {
+  target          = azapi_resource.resource_group["models"]
+  override_during = plan
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models" }
+}
+override_resource {
+  target          = azapi_resource.resource_group["agents"]
+  override_during = plan
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents" }
+}
+override_resource {
+  target          = module.ai_gateway.azapi_resource.gateway
+  override_during = plan
+  values = {
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture"
+    output = { properties = { frontend = { defaultHostname = "gateway.example.invalid" } } }
+    identity = {
+      type         = "SystemAssigned"
+      principal_id = "00000000-0000-0000-0000-000000000002"
+      tenant_id    = "00000000-0000-0000-0000-000000000003"
+      identity_ids = []
+    }
+  }
+}
+override_resource {
+  target          = module.foundry_models.azapi_resource.models
+  override_during = plan
+  values = {
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models/providers/Microsoft.CognitiveServices/accounts/models"
+    output = { properties = { endpoint = "https://models.example.invalid/" } }
+  }
+}
+override_resource {
+  target          = module.foundry_models.azapi_resource.model_deployment["gpt-latest"]
+  override_during = plan
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models/providers/Microsoft.CognitiveServices/accounts/models/deployments/gpt-latest" }
+}
+override_resource {
+  target          = module.foundry_models.azapi_resource.model_deployment["gpt-6-sol"]
+  override_during = plan
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models/providers/Microsoft.CognitiveServices/accounts/models/deployments/gpt-6-sol" }
+}
+override_resource {
+  target          = module.foundry_models.azapi_resource.model_deployment["gpt-mini-latest"]
+  override_during = plan
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models/providers/Microsoft.CognitiveServices/accounts/models/deployments/gpt-mini-latest" }
+}
+override_resource {
+  target          = module.foundry_agents.azapi_resource.agents
+  override_during = plan
+  values = {
+    id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.CognitiveServices/accounts/agents"
+    identity = {
+      type         = "SystemAssigned"
+      principal_id = "00000000-0000-0000-0000-000000000007"
+      tenant_id    = "00000000-0000-0000-0000-000000000003"
+      identity_ids = []
+    }
+  }
+}
+override_resource {
+  target          = module.foundry_agents.azapi_resource.project
+  override_during = plan
+  values = {
+    id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.CognitiveServices/accounts/agents/projects/project"
+    identity = {
+      type         = "SystemAssigned"
+      principal_id = "00000000-0000-0000-0000-000000000004"
+      tenant_id    = "00000000-0000-0000-0000-000000000003"
+      identity_ids = []
+    }
+  }
+}
+override_resource {
+  target          = module.foundry_agents.azapi_resource.storage
+  override_during = plan
+  values = {
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.Storage/storageAccounts/storage"
+    output = { properties = { primaryEndpoints = { blob = "https://storage.example.invalid/" } } }
+  }
+}
+override_resource {
+  target          = module.foundry_agents.azapi_resource.registry
+  override_during = plan
+  values = {
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.ContainerRegistry/registries/registry"
+    output = { properties = { loginServer = "registry.example.invalid" } }
+  }
+}
+override_resource {
+  target          = module.ai_gateway.azapi_resource.insights
+  override_during = plan
+  values = {
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.Insights/components/gateway"
+    output = { properties = { ConnectionString = "synthetic-only-not-a-credential" } }
+  }
+}
+override_resource {
+  target          = module.ai_gateway.azapi_resource.foundry_provider[0]
+  override_during = plan
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture/workspaces/default/modelProviders/foundry" }
+}
+override_resource {
+  target          = module.ai_gateway.azapi_resource.catalog_model["gpt-latest"]
+  override_during = plan
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture/workspaces/default/modelProviders/foundry/models/gpt-latest" }
+}
+override_resource {
+  target          = module.ai_gateway.azapi_resource.catalog_model["gpt-6-sol"]
+  override_during = plan
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture/workspaces/default/modelProviders/foundry/models/gpt-6-sol" }
+}
+override_resource {
+  target          = module.ai_gateway.azapi_resource.catalog_model["gpt-mini-latest"]
+  override_during = plan
+  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture/workspaces/default/modelProviders/foundry/models/gpt-mini-latest" }
+}
+override_resource {
+  target          = module.foundry_agents.azapi_resource.insights
+  override_during = plan
+  values = {
+    id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.Insights/components/agents"
+    output = { properties = { ConnectionString = "synthetic-only-not-a-credential" } }
+  }
+}
+
+run "root_default" {
+  command = plan
+  assert {
+    condition = (
+      length(azapi_resource.foundry_gateway_model_access) == 0 &&
+      length(azapi_resource.gateway_remote_tool) == 0 &&
+      output.deployment_contract.integration.gateway_model_access_enabled == false &&
+      output.deployment_contract.integration.monitoring_enabled == false &&
+      output.deployment_contract.integration.insights_connection_id == null &&
+      output.deployment_contract.integration.remote_tool_connection_id == null
+    )
+    error_message = "Existing default graph must not silently grant gateway access or add a RemoteTool."
+  }
+  assert {
+    condition = (
+      output.gateway_endpoint == "https://gateway.example.invalid" &&
+      output.gateway_contract.name == "2026" &&
+      alltrue([for k in ["gateway", "catalog", "aliases", "api_keys"] : output.gateway_api_versions[k] == "2026-09-01-preview"]) &&
+      output.gateway_api_versions.telemetry == "2025-09-01-preview" &&
+      length(distinct(values(output.resource_groups))) == 3 &&
+      output.model_alias_configuration["primary-router"].alias_name == "gpt-latest" &&
+      length(output.model_alias_configuration["primary-router"].backend_models) == 3 &&
+      output.model_alias_configuration["mini-router"].alias_name == "gpt-mini-latest" &&
+      alltrue([for k in ["models", "agents", "storage", "registry"] : output.backend_public_network_access[k] == "Enabled"]) &&
+      output.backend_public_network_access.monitoring_ingestion == "Unspecified"
+    )
+    error_message = "Fresh root must compose the pinned API2026 three-group baseline and real routed profile."
+  }
+  assert {
+    condition = (
+      output.deployment_contract.version == 1 &&
+      !strcontains(jsonencode(output.deployment_contract), "synthetic-only-not-a-credential") &&
+      !strcontains(jsonencode(output.deployment_contract), "connectionString") &&
+      contains(output.deployment_contract.deferred_integrations, "ToolServer") &&
+      contains(output.deployment_contract.deferred_integrations, "RemoteTool")
+    )
+    error_message = "The handoff is an allow-listed nonsecret infrastructure contract, not fabricated application parity."
+  }
+}
+
+run "root_foundry_gateway_model_access" {
+  command = plan
+  variables { enable_foundry_gateway_model_access = true }
+  assert {
+    condition = (
+      toset(keys(azapi_resource.foundry_gateway_model_access)) == toset(["account", "project"]) &&
+      azapi_resource.foundry_gateway_model_access["account"].body.properties.principalId == "00000000-0000-0000-0000-000000000007" &&
+      azapi_resource.foundry_gateway_model_access["project"].body.properties.principalId == "00000000-0000-0000-0000-000000000004" &&
+      alltrue([for role in azapi_resource.foundry_gateway_model_access :
+        role.parent_id == module.ai_gateway.gateway_id &&
+        role.body.properties.principalType == "ServicePrincipal" &&
+        role.body.properties.roleDefinitionId == "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/roleDefinitions/a6b68e3d-a1f0-4c60-8678-237c050cf4ea"
+      ]) &&
+      length(azapi_resource.gateway_remote_tool) == 0
+    )
+    error_message = "Opt-in grants must use stable account/project keys and exact caller principals/role at gateway scope, independently of tools."
+  }
+}
+
+run "reject_duplicate_foundry_gateway_owners" {
+  command = plan
+  variables {
+    enable_foundry_gateway_model_access = true
+    gateway_access_principals = {
+      account = { principal_id = "00000000-0000-0000-0000-000000000007" }
+      project = { principal_id = "00000000-0000-0000-0000-000000000004" }
+    }
+  }
+  expect_failures = [azapi_resource.foundry_gateway_model_access]
+}
+
+run "root_remote_tool" {
+  command = plan
+  variables { gateway_remote_tool_endpoint = "https://service-managed-123.gateway.example.invalid/caller-verified-tool-endpoint" }
+  override_resource {
+    target          = module.ai_gateway.azapi_resource.gateway
+    override_during = plan
+    values = {
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/gateway/providers/Microsoft.ApiManagement/aigateways/fixture"
+      output = { properties = { frontend = { defaultHostname = "service-managed-123.gateway.example.invalid" } } }
+      identity = {
+        type         = "SystemAssigned"
+        principal_id = "00000000-0000-0000-0000-000000000002"
+        tenant_id    = "00000000-0000-0000-0000-000000000003"
+        identity_ids = []
+      }
+    }
+  }
+  assert {
+    condition = (
+      length(azapi_resource.foundry_gateway_model_access) == 0 &&
+      length(azapi_resource.gateway_remote_tool) == 1 &&
+      azapi_resource.gateway_remote_tool[0].parent_id == module.foundry_agents.project_id &&
+      azapi_resource.gateway_remote_tool[0].body.properties.target == var.gateway_remote_tool_endpoint &&
+      azapi_resource.gateway_remote_tool[0].body.properties.authType == "ProjectManagedIdentity" &&
+      azapi_resource.gateway_remote_tool[0].body.properties.audience == "https://azure-api.net/aigateway" &&
+      azapi_resource.gateway_remote_tool[0].body.properties.metadata.type == "custom_MCP" &&
+      azapi_resource.gateway_remote_tool[0].body.properties.isSharedToAll &&
+      !contains(output.deployment_contract.deferred_integrations, "RemoteTool") &&
+      contains(output.deployment_contract.deferred_integrations, "ToolServer") &&
+      contains(output.deployment_contract.deferred_integrations, "Toolbox")
+    )
+    error_message = "Only the explicit endpoint creates the upstream project-identity RemoteTool; service-managed hostnames need not equal ARM names."
+  }
+}
+
+run "root_both_integrations" {
+  command = plan
+  variables {
+    enable_foundry_gateway_model_access = true
+    gateway_remote_tool_endpoint        = "https://gateway.example.invalid:443/caller-verified-tool-endpoint"
+  }
+  assert {
+    condition     = length(azapi_resource.foundry_gateway_model_access) == 2 && length(azapi_resource.gateway_remote_tool) == 1
+    error_message = "Explicit model access and tool connection must compose independently, including the default HTTPS port."
+  }
+}
+
+run "root_monitoring_integration" {
+  command = plan
+  variables { enable_foundry_monitoring_integration = true }
+  assert {
+    condition = (
+      output.deployment_contract.integration.monitoring_enabled &&
+      length(azapi_resource.foundry_gateway_model_access) == 0 &&
+      length(azapi_resource.gateway_remote_tool) == 0
+    )
+    error_message = "Monitoring opt-in must reach the support module independently of gateway model or tool access."
+  }
+}
+
+run "root_all_integrations" {
+  command = plan
+  variables {
+    enable_foundry_monitoring_integration = true
+    enable_foundry_gateway_model_access   = true
+    gateway_remote_tool_endpoint          = "https://gateway.example.invalid/caller-verified-tool-endpoint"
+  }
+  assert {
+    condition = (
+      output.deployment_contract.integration.monitoring_enabled &&
+      output.deployment_contract.integration.gateway_model_access_enabled &&
+      length(azapi_resource.foundry_gateway_model_access) == 2 &&
+      length(azapi_resource.gateway_remote_tool) == 1
+    )
+    error_message = "All explicit integrations must compose without hidden feature coupling or broader ownership."
+  }
+}
+
+run "reject_remote_tool_http" {
+  command = plan
+  variables { gateway_remote_tool_endpoint = "http://gateway.example.invalid/caller-verified-tool-endpoint" }
+  expect_failures = [var.gateway_remote_tool_endpoint]
+}
+
+run "reject_remote_tool_credentials" {
+  command = plan
+  variables { gateway_remote_tool_endpoint = "https://user:password@gateway.example.invalid/caller-verified-tool-endpoint" }
+  expect_failures = [var.gateway_remote_tool_endpoint]
+}
+
+run "reject_remote_tool_query" {
+  command = plan
+  variables { gateway_remote_tool_endpoint = "https://gateway.example.invalid/caller-verified-tool-endpoint?key=synthetic" }
+  expect_failures = [var.gateway_remote_tool_endpoint]
+}
+
+run "reject_remote_tool_origin" {
+  command = plan
+  variables { gateway_remote_tool_endpoint = "https://unrelated.example.invalid/caller-verified-tool-endpoint" }
+  expect_failures = [azapi_resource.gateway_remote_tool]
+}
+
+run "root_custom" {
+  command = plan
+  variables {
+    model_allowed_client_cidrs = ["203.0.113.42/32", "2001:db8:1234::/48", "203.0.113.42/32"]
+    model_deployments = {
+      for key, model in jsondecode(file("model-profile.json")).model_deployments :
+      key => merge(model, { cost_limit = null, request_limit = 7 })
+    }
+    developer_principal_id   = "00000000-0000-0000-0000-000000000005"
+    developer_principal_type = "Group"
+    gateway_access_principals = {
+      caller = { principal_id = "00000000-0000-0000-0000-000000000006", principal_type = "ServicePrincipal" }
+    }
+    tags = { fixture = "forwarded" }
+  }
+  assert {
+    condition     = output.model_api_configuration["gpt-latest"].api_format == "OpenAIChatCompletions"
+    error_message = "Custom policies must not change probe protocol metadata."
+  }
+}
+
+run "root_single_group" {
+  command = plan
+  variables { api2026_resource_group_name = "single-fixture" }
+  assert {
+    condition     = length(distinct(values(output.resource_groups))) == 1 && output.gateway_contract.single_resource_group && !output.gateway_contract.private_lab
+    error_message = "Single-group composition is explicit and must not silently enable the excluded private lab."
+  }
+}
+
+run "alias_protocol_intersection" {
+  command = plan
+  variables {
+    model_deployments = merge(jsondecode(file("model-profile.json")).model_deployments, {
+      gpt-6-sol = merge(jsondecode(file("model-profile.json")).model_deployments["gpt-6-sol"], {
+        endpoints = ["/openai/v1/responses"]
+      })
+    })
+  }
+  assert {
+    condition     = output.model_alias_configuration["primary-router"].endpoints == tolist(["/openai/v1/responses"])
+    error_message = "Alias metadata must advertise only the intersection of routed backend protocols."
+  }
+}
+
+run "root_replacement_profile" {
+  command = plan
+  variables {
+    model_deployments = {
+      custom-model = {
+        model_name    = "synthetic-model"
+        model_version = "test-version"
+        capacity      = 7
+        token_limit   = 700
+        endpoints     = ["/openai/v1/responses"]
+      }
+    }
+    model_aliases = {
+      custom-route = { alias_name = "custom-callable", backend_models = [{ deployment = "custom-model", priority = 2, weight = 75 }] }
+    }
+  }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.model_deployment["custom-model"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/models/providers/Microsoft.CognitiveServices/accounts/models/deployments/custom-model" }
+  }
+  assert {
+    condition = (
+      toset(keys(output.model_deployment_ids)) == toset(["custom-model"]) &&
+      toset(keys(output.model_alias_configuration)) == toset(["custom-route"]) &&
+      output.model_alias_configuration["custom-route"].alias_name == "custom-callable" &&
+      output.model_alias_configuration["custom-route"].backend_models[0].priority == 2 &&
+      output.model_alias_configuration["custom-route"].backend_models[0].weight == 75
+    )
+    error_message = "Explicit model/alias maps must replace the entire default maps, not merge old model ownership back in."
+  }
+}
+
+run "root_backend_revision" {
+  command = plan
+  variables { backend_revision = "rebuild-2" }
+  assert {
+    condition     = local.backend_token != local.resource_token
+    error_message = "An explicit backend revision must isolate rebuilt backend names without replacing the gateway."
+  }
+}
+
+run "root_disabled_backends" {
+  command = plan
+  variables {
+    standalone_backend_public_network_access = "Disabled"
+    gateway_backend_subnet_id                = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/platform/providers/Microsoft.Network/virtualNetworks/shared/subnets/backend"
+  }
+  override_data {
+    target = module.ai_gateway.data.azapi_resource.gateway_backend_subnet[0]
+    values = { output = { properties = { delegations = [{ properties = { serviceName = "Microsoft.App/environments" } }] } } }
+  }
+  override_data {
+    target = module.ai_gateway.data.azapi_resource.gateway_backend_vnet[0]
+    values = { output = { location = "Sweden Central" } }
+  }
+  assert {
+    condition     = alltrue([for access in values(output.backend_public_network_access) : access == "Disabled"])
+    error_message = "Explicit private-backend posture must reach every owned PaaS/monitoring dependency, not claim gateway private ingress."
+  }
+}
+
+run "root_storage_only_disabled" {
+  command = plan
+  variables { agent_storage_public_network_access = "Disabled" }
+  assert {
+    condition = (
+      output.backend_public_network_access.storage == "Disabled" &&
+      alltrue([for k in ["models", "agents", "registry"] : output.backend_public_network_access[k] == "Enabled"]) &&
+      output.backend_public_network_access.monitoring_ingestion == "Unspecified" &&
+      output.backend_public_network_access.monitoring_query == "Unspecified" &&
+      output.gateway_contract.backend_subnet_id == null
+    )
+    error_message = "A Storage-only override must not disable unrelated backends/monitoring or require gateway subnet integration."
+  }
+}
+
+run "reject_unrestricted_cidrs" {
+  command = plan
+  variables { model_allowed_client_cidrs = ["0.0.0.0/00", "::/0"] }
+  expect_failures = [var.model_allowed_client_cidrs]
+}
+
+run "reject_invalid_cidr" {
+  command = plan
+  variables { model_allowed_client_cidrs = ["203.0.113.999/32", "2001:db8::/129"] }
+  expect_failures = [var.model_allowed_client_cidrs]
+}
+
+run "reject_unknown_alias_target" {
+  command = plan
+  variables {
+    model_aliases = { bad = { alias_name = "bad", backend_models = [{ deployment = "missing" }] } }
+  }
+  expect_failures = [var.model_aliases]
+}
+
+run "reject_duplicate_route" {
+  command = plan
+  variables {
+    model_aliases = {
+      bad = { alias_name = "bad", backend_models = [{ deployment = "gpt-latest" }, { deployment = "gpt-latest" }] }
+    }
+  }
+  expect_failures = [var.model_aliases]
+}
+
+run "reject_invalid_route_numbers" {
+  command = plan
+  variables {
+    model_aliases = { bad = { alias_name = "bad", backend_models = [{ deployment = "gpt-latest", priority = -1, weight = 0 }] } }
+  }
+  expect_failures = [var.model_aliases]
+}
+
+run "reject_private_backends_without_subnet" {
+  command = plan
+  variables { standalone_backend_public_network_access = "Disabled" }
+  expect_failures = [var.standalone_backend_public_network_access]
+}

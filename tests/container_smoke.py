@@ -387,6 +387,21 @@ def main() -> None:
             ]
             subprocess.run(run_command, check=True, capture_output=True, text=True)
             _wait_for_readiness(f"http://127.0.0.1:{host_port}/readiness", container_name)
+            subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    container_name,
+                    "python",
+                    "-c",
+                    "from pathlib import Path; "
+                    "assert not Path('/app/infra/terraform').exists(), "
+                    "'Terraform infrastructure and local state must not enter the application image'",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
             _post_response(f"http://127.0.0.1:{host_port}/responses", store=True, stream=True)
             _post_response(f"http://127.0.0.1:{host_port}/responses", store=False, stream=False)
 
@@ -403,7 +418,7 @@ def main() -> None:
                     "The container did not exercise both mocked services: "
                     f"gateway_requests={len(gateway_requests)}, toolbox_methods={toolbox_methods}"
                 )
-        print("Container smoke test passed: readiness and both Responses modes completed.")
+        print("Container smoke test passed: Terraform excluded, readiness and both Responses modes completed.")
     except Exception:
         logs = subprocess.run(
             ["docker", "logs", container_name],

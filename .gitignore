@@ -146,3 +146,14 @@ Thumbs.db
 
 # Azure Developer CLI
 .azure/
+
+# Terraform local data, plans, and private inputs
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.json
+terraform.tfvars
+terraform.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
