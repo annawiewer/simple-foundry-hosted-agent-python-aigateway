@@ -17,9 +17,11 @@ It accepts optional `content_safety_severity` (`Low`, `Medium`, `High` or null)
 for composition with [ai-gateway](../ai-gateway/README.md); accepting metadata
 does not create a gateway policy here.
 
-The account disables local authentication and enables project management.
-Deployments serialize through an account-scoped AzAPI operation lock and bind
-`Microsoft.DefaultV2`, independently of any selected gateway severity.
+The model-only account disables local authentication and project management,
+matching Bicep; the separate agent account supports projects.
+Deployments serialize through an account-scoped AzAPI operation lock and omit
+an explicit `raiPolicyName`, matching Bicep. Read back the service's effective
+backend policy rather than assuming a policy name or that filtering is disabled.
 The operation lock is not a remote state/concurrent-writer lock. Backend filter
 configuration is not enforcement proof or gateway/MCP filtering.
 

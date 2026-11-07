@@ -118,7 +118,7 @@ cat > /tmp/ai-gateway.parameters.json <<EOF
       {
         "armName": "primary-router",
         "aliasName": "gpt-latest",
-        "description": "Three-tier GPT model failover.",
+        "description": "Three-tier GPT model priority routing.",
         "backendModels": [
           {"modelArmName": "gpt-latest", "priority": 0, "weight": 100},
           {"modelArmName": "gpt-6-sol", "priority": 1, "weight": 100},

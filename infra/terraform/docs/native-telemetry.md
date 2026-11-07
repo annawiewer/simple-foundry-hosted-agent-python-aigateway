@@ -15,8 +15,9 @@ separate readiness helper performs GETs, not resource or role changes.
 metrics/logs/traces endpoints, managed identity with the Monitor audience,
 and `payloadCapture = false`; it does not use a connection string.
 The [acceptance matrix](evidence-map.md#acceptance-matrix) records separate
-delivery evidence: the November 7, 2026 on-demand hosted run correlated native
-gateway, agent, model and GitHub backend spans. That does not qualify every
+delivery evidence: the November 7, 2026 current-source hosted digest and routine
+dispatch correlated native gateway, agent, model and GitHub backend spans.
+That does not qualify every
 signal, target, Portal dashboard or exporter migration.
 
 ## Prerequisites

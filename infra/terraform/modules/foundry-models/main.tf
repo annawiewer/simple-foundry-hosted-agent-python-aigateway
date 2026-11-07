@@ -9,7 +9,7 @@ resource "azapi_resource" "models" {
     kind = "AIServices"
     sku  = { name = "S0" }
     properties = {
-      allowProjectManagement = true
+      allowProjectManagement = false
       customSubDomainName    = var.name
       disableLocalAuth       = true
       publicNetworkAccess    = var.public_network_access
@@ -35,14 +35,12 @@ resource "azapi_resource" "model_deployment" {
       name     = each.value.sku_name
       capacity = each.value.capacity
     }
-    properties = merge({
+    properties = {
       model = {
         name    = each.value.model_name
         version = each.value.model_version
         format  = each.value.model_format
       }
-      }, true ? {
-      raiPolicyName = "Microsoft.DefaultV2"
-    } : {})
+    }
   }
 }

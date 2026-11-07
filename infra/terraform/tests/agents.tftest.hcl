@@ -2,7 +2,8 @@ mock_provider "azapi" {
   override_during = plan
   mock_resource "azapi_resource" {
     defaults = {
-      id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.Insights/components/monitoring"
+      id       = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.Insights/components/monitoring"
+      location = "eastus2"
       output = {
         properties = {
           ConnectionString = "synthetic-only-not-a-credential"
@@ -12,16 +13,41 @@ mock_provider "azapi" {
       }
     }
   }
+  mock_data "azapi_resource" {
+    defaults = { output = { isDefault = true, isSharedToAll = true } }
+  }
+  mock_resource "azapi_resource_action" {
+    defaults = {
+      id    = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.CognitiveServices/accounts/agents/projects/project/connections/registry-conn"
+      exist = true
+    }
+  }
 }
 override_resource {
   target          = azapi_resource.agents
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.CognitiveServices/accounts/agents" }
+  values = {
+    id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.CognitiveServices/accounts/agents"
+    identity = {
+      type         = "SystemAssigned"
+      principal_id = "00000000-0000-0000-0000-000000000002"
+      tenant_id    = "00000000-0000-0000-0000-000000000003"
+      identity_ids = []
+    }
+  }
 }
 override_resource {
   target          = azapi_resource.project
   override_during = plan
-  values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.CognitiveServices/accounts/agents/projects/project" }
+  values = {
+    id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.CognitiveServices/accounts/agents/projects/project"
+    identity = {
+      type         = "SystemAssigned"
+      principal_id = "00000000-0000-0000-0000-000000000004"
+      tenant_id    = "00000000-0000-0000-0000-000000000003"
+      identity_ids = []
+    }
+  }
 }
 override_resource {
   target          = azapi_resource.storage
@@ -37,6 +63,20 @@ override_resource {
   values = {
     id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.ContainerRegistry/registries/registry"
     output = { properties = { loginServer = "registry.example.invalid" } }
+    identity = {
+      type         = "SystemAssigned"
+      principal_id = "00000000-0000-0000-0000-000000000007"
+      tenant_id    = "00000000-0000-0000-0000-000000000003"
+      identity_ids = []
+    }
+  }
+}
+override_resource {
+  target          = azapi_resource.registry_connection
+  override_during = plan
+  values = {
+    id       = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/agents/providers/Microsoft.CognitiveServices/accounts/agents/projects/project/connections/registry-conn"
+    location = "eastus2"
   }
 }
 variables {
@@ -57,6 +97,89 @@ run "agents_module" {
     condition     = azapi_resource.project_insights_connection.body.properties.authType == "ApiKey" && length(azapi_resource.role_assignment) == 5 && output.monitoring_connection_id == null
     error_message = "Monitoring integration must remain absent from the retained default support graph."
   }
+  assert {
+    condition     = azapi_resource.registry_connection.body.properties.isDefault && !azapi_resource.registry_connection.body.properties.isSharedToAll
+    error_message = "The project-local registry must explicitly retain default selection without enabling sharing."
+  }
+  assert {
+    condition     = length(azapi_resource_action.registry_connection_sharing) == 0 && length(data.azapi_resource.registry_connection_readback) == 0
+    error_message = "The project-local opt-out must not execute a sharing PATCH."
+  }
+}
+
+run "agents_shared_registry" {
+  command = plan
+  module { source = "./modules/foundry-agents" }
+  variables { share_registry_connection = true }
+  assert {
+    condition = (
+      azapi_resource.registry_connection.body.properties.isDefault &&
+      azapi_resource.registry_connection.body.properties.isSharedToAll &&
+      azapi_resource.registry_connection.parent_id == azapi_resource.project.id &&
+      azapi_resource.registry_connection.body.properties.authType == "ManagedIdentity" &&
+      azapi_resource.role_assignment["project-acr-pull"].parent_id == azapi_resource.registry.id &&
+      length(azapi_resource.role_assignment) == 5
+    )
+    error_message = "Sharing must retain explicit default selection, the existing owner and the same scoped pull grant."
+  }
+  assert {
+    condition = (
+      length(azapi_resource_action.registry_connection_sharing) == 1 &&
+      azapi_resource_action.registry_connection_sharing[0].method == "PATCH" &&
+      azapi_resource_action.registry_connection_sharing[0].when == "apply" &&
+      azapi_resource_action.registry_connection_sharing[0].resource_id == azapi_resource.registry_connection.id &&
+      azapi_resource_action.registry_connection_sharing[0].body == azapi_resource.registry_connection.body &&
+      data.azapi_resource.registry_connection_readback[0].resource_id == azapi_resource.registry_connection.id
+    )
+    error_message = "Shared mode must PATCH and independently read back the sole existing connection without changing its payload."
+  }
+}
+
+run "agents_shared_registry_readback" {
+  command   = apply
+  state_key = "registry-shared"
+  module { source = "./modules/foundry-agents" }
+  variables { share_registry_connection = true }
+  assert {
+    condition     = data.azapi_resource.registry_connection_readback[0].output.isDefault && data.azapi_resource.registry_connection_readback[0].output.isSharedToAll
+    error_message = "The final shared-registry readback must retain both flags."
+  }
+}
+
+run "reject_registry_unshared_readback" {
+  command   = apply
+  state_key = "registry-unshared"
+  module { source = "./modules/foundry-agents" }
+  variables { share_registry_connection = true }
+  override_data {
+    target = data.azapi_resource.registry_connection_readback[0]
+    values = { output = { isDefault = true, isSharedToAll = false } }
+  }
+  expect_failures = [data.azapi_resource.registry_connection_readback[0]]
+}
+
+run "reject_registry_nondefault_readback" {
+  command   = apply
+  state_key = "registry-nondefault"
+  module { source = "./modules/foundry-agents" }
+  variables { share_registry_connection = true }
+  override_data {
+    target = data.azapi_resource.registry_connection_readback[0]
+    values = { output = { isDefault = false, isSharedToAll = true } }
+  }
+  expect_failures = [data.azapi_resource.registry_connection_readback[0]]
+}
+
+run "reject_registry_missing_readback" {
+  command   = apply
+  state_key = "registry-missing"
+  module { source = "./modules/foundry-agents" }
+  variables { share_registry_connection = true }
+  override_data {
+    target = data.azapi_resource.registry_connection_readback[0]
+    values = { output = { isDefault = true } }
+  }
+  expect_failures = [data.azapi_resource.registry_connection_readback[0]]
 }
 
 run "agents_monitoring_integration" {

@@ -198,14 +198,14 @@ class ApplicationFlowTests(unittest.TestCase):
         self.process.assert_not_called()
         spec = self.spec()
         self.assertEqual(spec["prebuilt_image"], IMAGE)
+        self.assertIs(spec["use_default_acr"], True)
         manifest = json.loads((self.workspace / "azure.yaml").read_text())
         agent = manifest["services"][AGENT]
         self.assertNotIn("config", agent)
         self.assertEqual(agent["startupCommand"], "uv run --frozen --no-dev python main.py")
         self.assertEqual(agent["image"], IMAGE)
         self.assertEqual(agent["docker"], {"imagePassthrough": True})
-        self.assertEqual(agent["registryConnectionId"],
-                         spec["environment"]["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"])
+        self.assertNotIn("registryConnectionId", agent)
         self.assertEqual(spec["environment"]["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"], "true")
         self.assertEqual(spec["environment"]["USE_EXISTING_AI_PROJECT"], "true")
         self.assertNotIn("image", manifest["services"][AGENT + "-daily"])
@@ -241,6 +241,24 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertNotEqual(self.prepare(["--use-default-acr"])[0], 0)
         self.assertFalse(self.workspace.exists())
         self.process.assert_not_called()
+
+    def test_legacy_named_registry_snapshot_remains_unchanged_during_deploy(self):
+        self.assertEqual(self.prepare(["--prebuilt-image", IMAGE])[0], 0)
+        spec = self.spec()
+        spec.pop("use_default_acr", None)
+        manifest_path = self.workspace / "azure.yaml"
+        document = json.loads(manifest_path.read_text())
+        document["services"][AGENT]["registryConnectionId"] = (
+            spec["environment"]["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]
+        )
+        manifest_path.write_text(json.dumps(document), encoding="utf-8")
+        spec["files"] = flow.fixed_hashes(self.workspace)
+        spec_path = self.workspace / "prepared.json"
+        spec_path.write_text(json.dumps(spec), encoding="utf-8")
+        before = (manifest_path.read_bytes(), spec_path.read_bytes())
+        self.assertEqual(self.launch_agent()[0], 0)
+        self.assertEqual((manifest_path.read_bytes(), spec_path.read_bytes()), before)
+        self.assertEqual(self.records()[-1]["prepared_sha256"], flow.fingerprint(spec))
 
     def test_default_acr_preserves_registry_ownership_and_image_checks(self):
         original = self.contract["agents"]["registry_connection_id"]
@@ -555,6 +573,17 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertEqual([record["status"] for record in self.records()], ["pending", "cli-completed"])
         self.assertFalse((self.workspace / "schedule.receipt.jsonl").exists())
 
+    def test_process_user_agent_reaches_azd_without_being_persisted(self):
+        marker = "synthetic-local-client"
+        with mock.patch.dict(os.environ, {"AZURE_DEV_USER_AGENT": marker}):
+            self.assertEqual(self.prepare()[0], 0)
+            self.assertEqual(self.launch_agent()[0], 0)
+        for call in self.process.call_args_list:
+            self.assertEqual(call.kwargs["env"].get("AZURE_DEV_USER_AGENT"), marker)
+        for path in self.workspace.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(marker.encode(), path.read_bytes())
+
     def test_selected_key_reaches_only_agent_process_not_files_or_inspections(self):
         self.assertEqual(self.prepare()[0], 0)
         self.assertEqual(self.launch_agent(("--gateway-key-env", "SELECTED_GATEWAY_KEY"))[0], 0)
@@ -825,6 +854,8 @@ class FailureDiagnosticsTests(unittest.TestCase):
              "stdout: unsupported service configuration"),
             ("stderr", b"HTTP 403: Forbidden\nprivate opaque response text\n",
              "stderr: HTTP 403; authorization denied"),
+            ("stderr", b'{"error":{"code":"not_a_registry_connection","message":"private connection"}}\n',
+             "stderr: registry connection invalid or missing"),
         ):
             with self.subTest(stream=stream):
                 def fake(command, **kwargs):

@@ -300,7 +300,7 @@ def azure_json(arguments, deadline, credential_env):
     require(executable is not None, "Azure CLI is required; no login or installation is automatic.")
     environment = dict(os.environ)
     if credential_env:
-        environment.pop(credential_env, None)
+        environment.pop(credential_env.upper() if os.name == "nt" else credential_env, None)
     result = subprocess.run(
         [executable, *arguments, "--only-show-errors", "-o", "json"],
         capture_output=True, text=True, check=False, timeout=remaining(deadline, 60), env=environment,

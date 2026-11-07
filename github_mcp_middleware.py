@@ -15,6 +15,7 @@ GITHUB_MCP_TOOLS = {
     "github_list_issues",
     "github_list_pull_requests",
 }
+PAGE_SIZE = 100
 
 
 def _source_tool_name(tool_name: str) -> str:
@@ -63,7 +64,7 @@ def _normalize_github_arguments(
             state="all",
             sort="updated",
             direction="desc",
-            perPage=100,
+            perPage=PAGE_SIZE,
             page=1,
         )
         return
@@ -78,7 +79,7 @@ def _normalize_github_arguments(
             orderBy="UPDATED_AT",
             direction="DESC",
             since=cutoff_text,
-            perPage=100,
+            perPage=PAGE_SIZE,
         )
         return
 
@@ -90,7 +91,7 @@ def _normalize_github_arguments(
         arguments.update(
             method="list_workflow_runs",
             workflow_runs_filter=normalized_filter,
-            perPage=100,
+            perPage=PAGE_SIZE,
             page=1,
         )
 
@@ -146,6 +147,21 @@ def _require_mapping_list(payload: Any, key: str | None = None) -> list[Mapping[
     return value
 
 
+def _coverage(items: list[Mapping[str, Any]], payload: Any) -> dict[str, Any]:
+    metadata = payload if isinstance(payload, Mapping) else {}
+    total = metadata.get("total_count", metadata.get("totalCount"))
+    page_info = metadata.get("pageInfo")
+    has_next_page = isinstance(page_info, Mapping) and page_info.get("hasNextPage") is True
+    return {
+        "scanned_count": len(items),
+        "possibly_truncated": (
+            len(items) >= PAGE_SIZE
+            or has_next_page
+            or isinstance(total, int) and not isinstance(total, bool) and total > len(items)
+        ),
+    }
+
+
 def _compact_github_payload(
     tool_name: str,
     payload: Any,
@@ -157,6 +173,7 @@ def _compact_github_payload(
         recent = [item for item in items if _is_recent(item.get("updated_at"), cutoff)]
         return {
             "returned_count": len(recent),
+            "coverage": _coverage(items, payload),
             "pull_requests": [_compact_pull_request(item) for item in recent],
         }
 
@@ -166,6 +183,7 @@ def _compact_github_payload(
         return {
             "total_count": payload.get("totalCount"),
             "returned_count": len(recent),
+            "coverage": _coverage(items, payload),
             "issues": [_compact_issue(item) for item in recent],
         }
 
@@ -179,6 +197,7 @@ def _compact_github_payload(
         ]
         return {
             "returned_count": len(failures),
+            "coverage": _coverage(items, payload),
             "workflow_runs": [_compact_workflow_run(item) for item in failures],
         }
 

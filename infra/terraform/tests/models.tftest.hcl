@@ -21,6 +21,10 @@ run "models_module" {
     condition     = toset(keys(output.backend.deployment_ids)) == toset(keys(var.model_deployments)) && output.backend.endpoint == "https://models.example.invalid/"
     error_message = "Models module must publish stable logical deployment keys and selected endpoint."
   }
+  assert {
+    condition     = !azapi_resource.models.body.properties.allowProjectManagement
+    error_message = "The model-only account must not enable project management."
+  }
 }
 run "reject_fractional_capacity" {
   command = plan
@@ -48,10 +52,10 @@ run "models_gateway_safety_metadata" {
   }
   assert {
     condition = alltrue([for deployment in azapi_resource.model_deployment :
-      deployment.body.properties.raiPolicyName == "Microsoft.DefaultV2" &&
+      !contains(keys(deployment.body.properties), "raiPolicyName") &&
       !can(deployment.body.properties.policies)
     ])
-    error_message = "Gateway safety metadata must not change the backend filter or add gateway policies to Cognitive Services deployments."
+    error_message = "Gateway safety metadata must not select a backend RAI policy or add gateway policies to Cognitive Services deployments."
   }
 }
 

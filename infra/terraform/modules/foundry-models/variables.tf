@@ -60,7 +60,7 @@ variable "public_network_access" {
 }
 
 variable "model_deployments" {
-  description = "Foundry deployments keyed by ARM-safe deployment name. Select model versions, deployment SKUs, and quota available to your subscription. Optional content_safety_severity is gateway metadata only; this module retains the separate Microsoft.DefaultV2 backend filter."
+  description = "Foundry deployments keyed by ARM-safe deployment name. Select model versions, deployment SKUs, and quota available to your subscription. Optional content_safety_severity is gateway metadata only; this module does not send a backend RAI policy name."
   type = map(object({
     model_name              = string
     model_version           = string

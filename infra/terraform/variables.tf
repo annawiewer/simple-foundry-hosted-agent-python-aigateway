@@ -95,6 +95,13 @@ variable "share_foundry_registry_connection" {
   nullable    = false
 }
 
+variable "share_foundry_remote_tool_connection" {
+  description = "Request sharing on the project-managed-identity RemoteTool connection, matching Bicep. Set false for independently verified project-local compatibility. Does not change the connection owner, authentication, target or gateway Tools User grant. Retain the selected value on subsequent plans."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
 variable "gateway_remote_tool_endpoint" {
   description = "Explicit independently verified HTTPS tool endpoint returned by this gateway's ToolServer. Null creates no RemoteTool connection. No MCP route, ToolServer or Toolbox is inferred or provisioned."
   type        = string

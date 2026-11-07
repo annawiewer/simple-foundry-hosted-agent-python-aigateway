@@ -10,6 +10,7 @@ output "registry_connection_id" { value = azapi_resource.registry_connection.id 
 output "registry_connection_shared" {
   description = "Configured sharing request, not independent Azure readback or proof of image-pull access."
   value       = azapi_resource.registry_connection.body.properties.isSharedToAll
+  depends_on  = [data.azapi_resource.registry_connection_readback]
 }
 output "storage_account_name" { value = azapi_resource.storage.name }
 output "storage_account_id" { value = azapi_resource.storage.id }

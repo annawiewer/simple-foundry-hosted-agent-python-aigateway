@@ -14,6 +14,9 @@ mock_provider "azapi" {
       }
     }
   }
+  mock_data "azapi_resource" {
+    defaults = { output = { isDefault = true, isSharedToAll = true } }
+  }
 }
 
 variables {
@@ -211,6 +214,24 @@ run "root_default" {
       contains(output.deployment_contract.deferred_integrations, "RemoteTool")
     )
     error_message = "The handoff is an allow-listed nonsecret infrastructure contract, not fabricated application parity."
+  }
+}
+
+run "root_optional_request_limits" {
+  command = plan
+  variables {
+    model_deployments = {
+      for key, model in jsondecode(file("model-profile.json")).model_deployments :
+      key => merge(
+        { for field, value in model : field => value if field != "request_limit" },
+        { content_safety_severity = "Medium" },
+        {
+          gpt-latest      = { request_limit = 1 }
+          gpt-6-sol       = { request_limit = null }
+          gpt-mini-latest = {}
+        }[key]
+      )
+    }
   }
 }
 
@@ -637,6 +658,27 @@ run "root_project_local_registry" {
       length(azapi_resource.gateway_remote_tool) == 1
     )
     error_message = "Project-local registry compatibility must retain exact connection ownership and all selected application integrations."
+  }
+}
+
+run "root_project_local_remote_tool" {
+  command = plan
+  variables {
+    share_foundry_remote_tool_connection = false
+    gateway_remote_tool_endpoint         = "https://gateway.example.invalid/caller-verified-tool-endpoint"
+  }
+  assert {
+    condition = (
+      !azapi_resource.gateway_remote_tool[0].body.properties.isSharedToAll &&
+      azapi_resource.gateway_remote_tool[0].parent_id == module.foundry_agents.project_id &&
+      azapi_resource.gateway_remote_tool[0].body.properties.authType == "ProjectManagedIdentity" &&
+      azapi_resource.gateway_remote_tool[0].body.properties.audience == "https://azure-api.net/aigateway" &&
+      azapi_resource.gateway_remote_tool[0].body.properties.target == var.gateway_remote_tool_endpoint &&
+      length(azapi_resource.foundry_gateway_tool_access) == 1 &&
+      azapi_resource.foundry_gateway_tool_access["project"].parent_id == module.ai_gateway.gateway_id &&
+      output.deployment_contract.integration.registry_connection_shared
+    )
+    error_message = "Project-local RemoteTool sharing must preserve the project owner, managed-identity tool access and independent registry setting."
   }
 }
 

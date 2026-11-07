@@ -112,12 +112,19 @@ resource "azapi_resource" "registry_connection" {
   type      = "Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview"
   name      = "${var.names.registry}-conn"
   parent_id = azapi_resource.project.id
+  # The service accepts isDefault, but the pinned preview schema omits it.
+  schema_validation_enabled = false
+  response_export_values = {
+    isDefault     = "properties.isDefault"
+    isSharedToAll = "properties.isSharedToAll"
+  }
   body = {
     properties = {
       category      = "ContainerRegistry"
       target        = azapi_resource.registry.output.properties.loginServer
       authType      = "ManagedIdentity"
       isSharedToAll = var.share_registry_connection
+      isDefault     = true
       credentials = {
         clientId   = azapi_resource.project.identity[0].principal_id
         resourceId = azapi_resource.registry.id
@@ -126,6 +133,41 @@ resource "azapi_resource" "registry_connection" {
     }
   }
   depends_on = [azapi_resource.role_assignment["project-acr-pull"]]
+}
+
+resource "azapi_resource_action" "registry_connection_sharing" {
+  count       = var.share_registry_connection ? 1 : 0
+  type        = azapi_resource.registry_connection.type
+  resource_id = azapi_resource.registry_connection.id
+  method      = "PATCH"
+  when        = "apply"
+  body = {
+    # PUT can reset sharing; PATCH must preserve default selection as well.
+    properties = merge(azapi_resource.registry_connection.body.properties, {
+      isSharedToAll = true
+      isDefault     = true
+    })
+  }
+  lifecycle {
+    replace_triggered_by = [azapi_resource.registry_connection]
+  }
+}
+
+data "azapi_resource" "registry_connection_readback" {
+  count       = var.share_registry_connection ? 1 : 0
+  type        = azapi_resource.registry_connection.type
+  resource_id = azapi_resource.registry_connection.id
+  response_export_values = {
+    isDefault     = "properties.isDefault"
+    isSharedToAll = "properties.isSharedToAll"
+  }
+  depends_on = [azapi_resource_action.registry_connection_sharing]
+  lifecycle {
+    postcondition {
+      condition     = try(self.output.isSharedToAll == true && self.output.isDefault == true, false)
+      error_message = "Azure did not retain the shared, default registry connection. Stop before deploying the hosted agent."
+    }
+  }
 }
 
 resource "azapi_resource" "project_insights_connection" {

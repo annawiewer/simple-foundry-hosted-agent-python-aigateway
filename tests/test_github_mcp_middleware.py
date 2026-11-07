@@ -158,6 +158,44 @@ class CompactGitHubPayloadTests(unittest.TestCase):
             text,
         )
 
+    def test_saturated_success_page_preserves_incomplete_failure_coverage(self) -> None:
+        payload = {
+            "total_count": 101,
+            "workflow_runs": [
+                {"id": number, "conclusion": "success", "updated_at": "2026-07-20T12:00:00Z"}
+                for number in range(100)
+            ],
+        }
+
+        compact = json.loads(_compact_github_text(
+            "github_actions_list", json.dumps(payload), cutoff=CUTOFF,
+        ))
+
+        self.assertEqual(compact["returned_count"], 0)
+        self.assertEqual(compact["workflow_runs"], [])
+        self.assertEqual(compact["coverage"], {"scanned_count": 100, "possibly_truncated": True})
+
+    def test_preserves_pagination_warning_before_recent_item_filtering(self) -> None:
+        old = {"updated_at": "2026-07-18T12:00:00Z"}
+        cases = (
+            ("github_list_pull_requests", [old] * 100, 100),
+            ("github_list_issues", {"issues": [old], "pageInfo": {"hasNextPage": True}}, 1),
+            ("github_actions_list", {"workflow_runs": [old], "total_count": 2}, 1),
+        )
+        for tool_name, payload, scanned in cases:
+            with self.subTest(tool_name=tool_name):
+                compact = _compact_github_payload(tool_name, payload, cutoff=CUTOFF)
+                self.assertEqual(compact["returned_count"], 0)
+                self.assertEqual(compact["coverage"], {
+                    "scanned_count": scanned, "possibly_truncated": True,
+                })
+
+    def test_small_page_keeps_observed_count_without_truncation_warning(self) -> None:
+        payload = [{"number": 2, "updated_at": "2026-07-20T12:00:00Z"}]
+        compact = _compact_github_payload("github_list_pull_requests", payload, cutoff=CUTOFF)
+        self.assertEqual(compact["returned_count"], 1)
+        self.assertEqual(compact["coverage"], {"scanned_count": 1, "possibly_truncated": False})
+
     def test_middleware_preserves_content_metadata(self) -> None:
         content = Content.from_text(
             json.dumps(

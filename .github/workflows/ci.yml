@@ -48,3 +48,12 @@ jobs:
 
       - name: Run container smoke test
         run: python tests/container_smoke.py --image simple-foundry-hosted-agent-python-aigateway:ci
+
+      - name: Prepare Terraform application build context
+        run: python -B infra/terraform/tests/prepare_application_ci.py "$RUNNER_TEMP/terraform-application"
+
+      - name: Build prepared Terraform application image
+        run: docker build --platform linux/amd64 --tag simple-foundry-hosted-agent-python-aigateway:terraform-ci "$RUNNER_TEMP/terraform-application/app"
+
+      - name: Run prepared application smoke test
+        run: python tests/container_smoke.py --image simple-foundry-hosted-agent-python-aigateway:terraform-ci

@@ -23,7 +23,7 @@ module and the agent-support-only example retain the false default.
 
 The connection retains `accounts/projects/connections@2025-06-01`, its original
 Terraform address, project parent and name, unshared, with Bicep's managed-identity
-body, target and metadata. Provider schema validation is disabled only for this auth
+body, target and metadata. This connection's provider schema validation is disabled only for this auth
 contract, matching Bicep's suppressed type warning; this is not schema proof.
 Default false preserves the original ApiKey body and provider validation.
 Read-only inspection found the existing connection also exposed through the
@@ -59,6 +59,36 @@ grants. ACR uses a project-managed-identity connection, unshared by default;
 It does not enable registry admin credentials or broaden the project AcrPull
 grant. The application root enables sharing through
 `share_foundry_registry_connection`; standalone support does not.
+The same connection explicitly requests `isDefault=true` for either sharing
+choice. In the November 7, 2026 target-specific repair, a sharing-only PATCH
+reset the observed default flag; explicitly including both fields restored
+sharing and default selection through both project/account readback routes.
+A subsequent ordinary Terraform PUT reset sharing to false even though its
+planned body contained both true flags. A successful apply alone is therefore
+not sufficient evidence.
+The pinned `2025-04-01-preview` ARM schema omits `isDefault`, so provider schema
+validation is disabled on this resource only. That exception is not a published
+API guarantee: verify both flags after applying and require a refreshed no-op
+plan. It does not create an account-route owner or bypass Azure authorization.
+Both flags are explicitly exported from the service response. This also makes
+the initial configuration update observable to the pinned provider rather than
+letting its no-op optimization retain the older body without `isDefault`.
+
+Shared mode follows the owner with a non-owning `azapi_resource_action` PATCH
+using the same API, connection ID and managed-identity payload, explicitly
+preserving both flags. `replace_triggered_by` reruns that action whenever the
+owner changes, including when a refresh detects sharing drift. The action
+does not create another connection or delete the connection when removed.
+A separate GET then checks both returned flags with a blocking postcondition;
+an action's stored response is not a substitute for that readback. The
+project-local opt-out creates neither the sharing action nor its readback.
+There is no registry drift mask or external provisioner.
+
+This ordered reconciliation passed target-specific live acceptance on
+November 7, 2026: project/account GETs retained both flags, an ordinary refreshed
+plan reported no pending changes, and the existing runtime and grants were preserved.
+The owner's exported response can describe its earlier, pre-PATCH GET; use
+the final readback and a refreshed plan, not that intermediate snapshot.
 Sharing is not a prerequisite for the application helper's project-local
 connection check. Independently compare the requested flag with Azure readback
 and a normal refreshed plan; see [project-local compatibility](../../docs/architecture.md#project-local-registry-compatibility).

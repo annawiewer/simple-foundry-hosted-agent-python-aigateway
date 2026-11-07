@@ -53,7 +53,7 @@ OS_ENVIRONMENT = {
     "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA",
     "TEMP", "TMP", "TMPDIR", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMDATA",
     "LANG", "LC_ALL", "LC_CTYPE", "TERM", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-    "SSL_CERT_FILE", "SSL_CERT_DIR", "AZURE_CONFIG_DIR", "AZD_CONFIG_DIR",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "AZURE_CONFIG_DIR", "AZD_CONFIG_DIR", "AZURE_DEV_USER_AGENT",
 }
 SAFE_VALUE = r"[A-Za-z0-9_./:=?()-]+"
 SAVED_VALUE = r"[A-Za-z0-9_./:=?()@&+,%~-]+"
@@ -76,7 +76,8 @@ DIAGNOSTIC_PATTERNS = (
      "quota, capacity or throttling failure"),
     (r"\b(?:ImagePullBackOff|ErrImagePull|ManifestUnknown)\b|(?:failed|unable) to pull.{0,40}image"
      r"|manifest unknown", "container image retrieval failed"),
-    (r"registry connection.{0,80}(?:missing|not found|invalid)|invalid.{0,40}registry connection",
+    (r"\bnot_a_registry_connection\b|registry connection.{0,80}(?:missing|not found|invalid)"
+     r"|invalid.{0,40}registry connection",
      "registry connection invalid or missing"),
     (r"(?:failed|error|unable).{0,40}(?:creat|deploy).{0,40}agent", "agent creation or deployment failed"),
     (r"\b(?:ServiceUnavailable|InternalServerError)\b", "remote service failure"),
@@ -289,6 +290,7 @@ def prepare(args):
     validate_values(values, bootstrap, box, args.subscription_id, args.tenant_id)
     require(not args.use_default_acr or args.prebuilt_image is not None,
             "Default ACR handling requires an explicitly selected prebuilt image.")
+    use_default_acr = args.prebuilt_image is not None
     if args.prebuilt_image is not None:
         validate_prebuilt_image(args.prebuilt_image, values["AZURE_CONTAINER_REGISTRY_ENDPOINT"])
     require(not linked(args.workspace), "Choose a new, unlinked application workspace.")
@@ -304,7 +306,7 @@ def prepare(args):
         (app / name).write_bytes(value)
     write_json(workspace / "azure.yaml", manifest(
         args.agent_name, args.repository, args.prebuilt_image, values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"],
-        args.use_default_acr,
+        use_default_acr,
     ))
     directory = workspace / ".azure" / values["AZURE_ENV_NAME"]
     directory.mkdir(parents=True)
@@ -320,7 +322,7 @@ def prepare(args):
     }
     if args.prebuilt_image is not None:
         spec["prebuilt_image"] = args.prebuilt_image
-    if args.use_default_acr:
+    if use_default_acr:
         spec["use_default_acr"] = True
     write_json(workspace / "prepared.json", spec)
 
@@ -636,7 +638,7 @@ def arguments(argv):
             )
             command.add_argument(
                 "--use-default-acr", action="store_true",
-                help="Omit the optional registry connection for a prebuilt ACR image; does not grant pull access.",
+                help="Compatibility flag: new prebuilt ACR workspaces omit the registry selector by default.",
             )
             command.add_argument("--model-alias-key", default="primary-router")
             command.add_argument("--mini-model-alias-key", default="mini-router")

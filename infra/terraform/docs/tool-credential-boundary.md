@@ -2,8 +2,9 @@
 
 An explicit-credential [tool lifecycle runner](toolchain.md) now implements
 ToolServer creation/rotation, GET-only inspection and Foundry Toolbox creation.
-**One real on-demand GitHub-tool path is accepted; broader credential lifecycle
-guarantees are not.** See the dated [acceptance matrix](evidence-map.md).
+**Real GitHub-tool execution is accepted for the on-demand digest and one
+routine dispatch; broader credential lifecycle guarantees are not.** See the
+dated [acceptance matrix](evidence-map.md).
 Terraform itself still
 owns only the RemoteTool connection and selected grants; an explicitly
 configured connection does not create its remote server or prove invocation.
@@ -38,7 +39,7 @@ defines resource scope for non-counter policies. These definitions are
 published for `2026-11-01`. Their correlation with observed 2025 fields
 supports this compatibility choice, **not by itself proof of service
 acceptance or enforcement**. No newer API or header
-array format is substituted, and the Bicep/shared application path is unchanged.
+array format is substituted; both IaC choices retain the shared tool path.
 
 An isolated November 7 selected-2025-API check created, updated, read and
 deleted a ToolServer using public Learn MCP and synthetic nonsecret headers.

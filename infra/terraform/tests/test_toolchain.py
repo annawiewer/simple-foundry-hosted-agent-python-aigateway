@@ -952,6 +952,26 @@ class ToolchainTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 2)
         self.assertNotIn(GITHUB_TOKEN, stderr.getvalue())
 
+    def test_selected_credential_exclusion_respects_platform_casing(self):
+        cases = (
+            ("nt", {"SELECTED": GITHUB_TOKEN, "KEEP": "safe"}, "selected", {"KEEP": "safe"}),
+            ("nt", {"SELECTED": GITHUB_TOKEN, "KEEP": "safe"}, "SeLeCtEd", {"KEEP": "safe"}),
+            ("posix", {"SELECTED": "other", "selected": GITHUB_TOKEN, "KEEP": "safe"},
+             "selected", {"SELECTED": "other", "KEEP": "safe"}),
+        )
+        for platform, environment, selected, expected in cases:
+            original = environment.copy()
+            with self.subTest(platform=platform, selected=selected), \
+                    mock.patch.object(tools.os, "name", platform), \
+                    mock.patch.object(tools.os, "environ", environment), \
+                    mock.patch.object(tools.shutil, "which", return_value="az"), \
+                    mock.patch.object(tools.subprocess, "run", return_value=mock.Mock(
+                        returncode=0, stdout='{"ok": true}',
+                    )) as run:
+                tools.azure_json(["account", "show"], tools.time.monotonic() + 60, selected)
+                self.assertEqual(run.call_args.kwargs["env"], expected)
+                self.assertEqual(environment, original)
+
 
 if __name__ == "__main__":
     unittest.main()

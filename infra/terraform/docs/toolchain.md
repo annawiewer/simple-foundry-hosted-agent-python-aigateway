@@ -3,7 +3,7 @@
 The optional [tool runner](../scripts/configure_tools.py) connects the GitHub
 tool service to the Terraform-created Foundry project. It is separate from
 Terraform and azd so GitHub credentials never enter Terraform arguments, state
-or plans. The original Bicep application path is unchanged.
+or plans. The original Bicep provisioning path remains separate.
 
 **The November 7, 2026 hosted digest exercised all three real GitHub tools.**
 An isolated ToolServer create/update/read/delete check also used public Learn
@@ -225,6 +225,10 @@ explicit boolean; both true and false are accepted without changing sharing.
 Missing/nonboolean values or a reported connection error block the Toolbox
 request. Record any discrepancy between requested and returned sharing rather
 than treating false as true or claiming general service semantics.
+For a verified project-local connection, select
+[`share_foundry_remote_tool_connection = false`](architecture.md#project-local-remotetool-compatibility)
+on the Terraform owner and retain it on later plans; the Toolbox runner does
+not reconcile Terraform sharing on your behalf.
 All project identity, authentication, audience, target and credential checks
 remain in force; runtime authorization still requires a real invocation.
 

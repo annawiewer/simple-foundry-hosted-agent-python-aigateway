@@ -16,15 +16,15 @@ services:
         uses:
             - simple-foundry-hosted-agent-python-aigateway
         action:
-            agent_name: simple-foundry-hosted-agent-python-aigateway
+            agentName: simple-foundry-hosted-agent-python-aigateway
             input: Create a concise daily repo digest for microsoft/agent-framework.
             type: invoke_agent_responses_api
         description: Create a daily repo digest at 9 AM Pacific time.
         enabled: true
         triggers:
             default:
-                cron_expression: 0 9 * * *
-                time_zone: America/Los_Angeles
+                cronExpression: 0 9 * * *
+                timeZone: America/Los_Angeles
                 type: schedule
     simple-foundry-hosted-agent-python-aigateway:
         project: ./

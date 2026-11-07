@@ -390,7 +390,7 @@ Sexual, and Violence. With the default deployment capacities, `gpt-latest` and
 `contentSafety` policy with `Medium` thresholds for Hate, Self-Harm, Sexual,
 and Violence; the
 postprovision credential PUT preserves that policy. The alias `gpt-latest`
-routes through a three-tier failover chain: `gpt-6.1-sol` at
+configures three ordered backend preferences: `gpt-6.1-sol` at
 priority 0, `gpt-6-sol` at priority 1, and `gpt-5.4-mini` at priority 2. Each
 backend explicitly sets a weight of 100; aliases can instead place multiple
 backends at the same priority with relative weights for traffic splitting. The
@@ -428,14 +428,16 @@ The model defaults use Global Standard deployments:
 | Purpose | Foundry deployment / Gateway alias | Backing model | Version | SKU | Capacity |
 | --- | --- | --- | --- | --- | --- |
 | Primary | `gpt-latest` | `gpt-6.1-sol` | `2026-09-29` | `GlobalStandard` | 20 |
-| Secondary failover | `gpt-6-sol` | `gpt-6-sol` | `2026-09-22` | `GlobalStandard` | 20 |
-| Mini safety net | `gpt-mini-latest` | `gpt-5.4-mini` | `2026-03-17` | `GlobalStandard` | 200 |
+| Secondary preference | `gpt-6-sol` | `gpt-6-sol` | `2026-09-22` | `GlobalStandard` | 20 |
+| Mini / third preference | `gpt-mini-latest` | `gpt-5.4-mini` | `2026-03-17` | `GlobalStandard` | 200 |
 
-If the primary deployment is unavailable or its quota is exhausted, AI Gateway
-automatically tries `gpt-6-sol` in a separate quota pool, then the higher-
-capacity `gpt-5.4-mini` deployment. If a model/version is unavailable in the
-selected region, override its corresponding name and version parameters with a
-supported catalog deployment and keep the remaining fallback tiers configured.
+Priority configures preference, not guaranteed error-triggered failover.
+The [official routing lab](https://github.com/Azure/aigateway/blob/6204dd56a94d4b54bfb4493974d70b39de93c18f/labs/22-model-routing/README.md#how-it-works)
+reports preferred-backend `429` and `404` errors reaching the caller without
+retrying lower-priority backends. This service limitation applies to both IaC
+choices; keep client retries and verify failure behavior for the actual target.
+If a model/version is unavailable in the selected region, override its name and
+version with a supported deployment and retain the intended alias priorities.
 
 Global Standard deployment capacity is provisioned on the Foundry model
 account. Mini capacity 200 accommodates requests from the GitHub Copilot app,

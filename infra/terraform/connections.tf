@@ -14,7 +14,7 @@ resource "azapi_resource" "gateway_remote_tool" {
       authType      = "ProjectManagedIdentity"
       audience      = "https://azure-api.net/aigateway"
       target        = var.gateway_remote_tool_endpoint
-      isSharedToAll = true
+      isSharedToAll = var.share_foundry_remote_tool_connection
       metadata      = { type = "custom_MCP" }
     }
   }

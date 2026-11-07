@@ -2,9 +2,10 @@
 
 One Terraform composition root calls three independent capability modules.
 The opt-in [application flow](application-flow.md) connects its staged handoffs
-to the shared agent and a separately enabled routine, without changing Bicep.
-The on-demand hosted digest is accepted; broader lifecycle scenarios remain
-separate. See the [acceptance matrix](evidence-map.md#acceptance-matrix).
+to the shared agent and a separately enabled routine, without invoking Bicep
+provisioning. The current-source hosted digest and routine dispatch are accepted;
+wall-clock scheduling and broader lifecycle scenarios remain separate. See the
+[acceptance matrix](evidence-map.md#acceptance-matrix).
 
 ## Offline and deployment preparation
 
@@ -141,7 +142,8 @@ These settings do not deploy an application or provision its tools.
 | `enable_foundry_gateway_tool_access` | `true` | One root-owned gateway-scoped Tools User grant for the project only. No account/developer tool permission or ToolServer creation. |
 | `enable_foundry_monitoring_integration` | `true` | In-place project Insights connection switch to managed identity and publisher grants for account/project and any explicit `hosted_agent_principals` at agent Insights scope. No second connection owner. |
 | `share_foundry_registry_connection` | `true` | Request sharing on the existing project-managed-identity registry connection, matching Bicep. Explicit false supports project-local compatibility; neither choice changes registry admin or the registry-scoped project AcrPull grant. |
-| `gateway_remote_tool_endpoint` | `null` | Explicit service-established HTTPS MCP URL on this gateway; creates the project-owned shared `aigw-github` RemoteTool with managed-identity auth. No guessed URL, credential or Toolbox. |
+| `share_foundry_remote_tool_connection` | `true` | Request sharing on the project-owned RemoteTool, matching Bicep. Explicit false supports independently verified project-local compatibility without changing authentication, target or gateway tool permissions. |
+| `gateway_remote_tool_endpoint` | `null` | Explicit service-established HTTPS MCP URL on this gateway; creates the project-owned `aigw-github` RemoteTool with managed-identity auth and the selected sharing request. No guessed URL, credential or Toolbox. |
 
 **Upgrading an existing root:** omitted switches now select five additional
 scoped grants and managed-identity/shared-connection bodies. Review a fresh plan
@@ -161,9 +163,10 @@ map with null severities; see [content-safety defaults and opt-outs](../README.m
 
 Changing these values on an already configured deployment can remove grants or
 change connection authentication/sharing. No state adoption or automatic
-migration is included. The nonsecret contract reports the selected settings,
+migration is included. The nonsecret contract reports integration settings,
 including `integration.registry_connection_shared`, which reports the configured
-sharing request rather than independent Azure readback.
+sharing request rather than independent Azure readback. Review RemoteTool
+sharing in the saved plan and independent connection readback.
 
 A selected RemoteTool waits for the selected tools grant, not for proven
 propagation. Model access is independent. The connection API remains
@@ -186,8 +189,24 @@ request, while the project's connections API listed the exact owned registry
 connection with its expected target and registry ID. This observation does not
 establish why the service returned false or how every region/API behaves.
 
-After independently verifying that project-local connection and its scoped
-permissions, explicitly select:
+The November 7 qualification isolated a further difference: a full PATCH
+retained sharing/default=true, but a subsequent Terraform PUT reset sharing.
+Shared mode now orders a non-owning PATCH after the sole connection owner,
+then verifies both flags through a blocking GET postcondition. Owner changes
+rerun the PATCH; ordinary refresh still detects drift. This does not change
+the API, add a connection owner or broaden access. Target-specific acceptance
+completed at 21:17:22 UTC on November 7: both endpoint GETs retained true/true,
+an ordinary refreshed plan had no pending changes, and the existing runtime
+and permissions were preserved. This qualifies the infrastructure repair,
+independently of application deployment. A subsequent integrated container
+source build deployed version 5, whose digest and all three tools passed
+runtime qualification with the shared/default connection preserved. See the
+[source-build evidence](evidence-map.md#shared-registry-source-build-qualification).
+Neither result certifies a fresh-from-empty deployment.
+
+**Project-local mode remains an explicit alternative, not a required workaround.**
+If that is the intended scope, independently verify the project-local connection
+and its scoped permissions, then select:
 
 ```hcl
 share_foundry_registry_connection = false
@@ -210,6 +229,28 @@ discovers the project's ContainerRegistry connections and validates the registry
 target and selected name without requiring a sharing flag in that path. This
 source evidence and project visibility support the compatibility choice; they
 do not replace hosted build/image-pull acceptance.
+
+### Project-local RemoteTool compatibility
+
+On November 7, 2026, independent project and account connection GETs returned
+`isSharedToAll=false` for the owned `aigw-github` connection, while its project
+ownership, managed-identity authentication, audience and gateway target matched.
+A refreshed plan otherwise tried to restore the default sharing request.
+This is a target-specific observation, not a general service guarantee.
+
+After verifying those fields and the project-scoped tool path, retain this
+explicit input alongside every original input and applied handoff:
+
+```hcl
+share_foundry_remote_tool_connection = false
+```
+
+The default remains Bicep-aligned `true`. This independent setting changes
+neither registry sharing nor any role grant. Review a new ordinary plan: do not
+hide drift with `ignore_changes`, recreate the connection or add another owner.
+The [Toolbox runner](toolchain.md#4-create-the-toolbox-and-review-its-runtime-values)
+already accepts either explicit boolean, but a working tool invocation is still
+required to establish runtime access.
 
 ### Nonsecret environment handoff
 
@@ -248,23 +289,24 @@ Gateway, catalog, aliases, key and telemetry resources now use
 Foundry account/project/deployment resources use `2025-04-01-preview`.
 The gateway SKU remains omitted. Preview deployment/API availability still
 requires target-specific qualification; an earlier 2026 deployment is not proof.
-This source change does not migrate or alter that deployment.
+Matching source defaults do not certify service availability or upgrade
+behavior; use a fresh target-specific plan and independent live readbacks.
 
 The gateway retains create-only headers, backend-replacement semantics and
 `prevent_destroy`. This is not an Azure deletion lock. Alias body changes still
 require replacement; model deployments serialize on their account.
 
-| Surface | Remaining difference or decision |
+| Surface | Behavior or qualification |
 |---|---|
-| Gateway/MCP safety | The bundled root selects `Medium` on all models; explicit profiles allow overrides/omission and standalone defaults remain opt-in. The external tool runner also requests Medium for MCP. Selected-API enforcement remains unqualified. Backend `Microsoft.DefaultV2` is a separate control. |
-| Backend filtering | Terraform pins `Microsoft.DefaultV2`; Bicep omits `raiPolicyName`. Omission is not proof of the effective default. |
-| Model request rate | The bundled profile requests 100 calls/minute per identity; Bicep has no default request-rate policy. An explicit replacement profile can omit it. |
-| Model account | Terraform retains `allowProjectManagement = true`, versus false in Bicep; no live mutation is included. |
-| Registry sharing | Shared by default in the application root, matching Bicep; standalone support remains unshared. The accepted hosted path used project-local compatibility and an immutable image through the explicit platform-default ACR option; other image/registry paths remain unqualified. |
+| Gateway/MCP safety | The bundled root selects `Medium` on all models; explicit profiles allow overrides/omission and standalone defaults remain opt-in. The external tool runner also requests Medium for MCP. Selected-API blocking enforcement remains unqualified; backend filtering is a separate control. |
+| Backend filtering | Both paths omit an explicit `raiPolicyName`. Omission neither proves the effective backend policy nor disables filtering; verify the selected deployment independently. |
+| Model request rate | Both bundled profiles omit a default request-rate policy while retaining token/cost controls. An explicit Terraform replacement profile can still configure request limits. |
+| Model account | Both paths set `allowProjectManagement = false` on the model-only account and retain project support on the agent account. An existing account needs a reviewed in-place plan and live qualification. |
+| Registry sharing | Shared by default in the application root, matching Bicep; standalone support remains unshared. The ordered owner/PATCH/GET repair passed live infrastructure acceptance with sharing/default true. The subsequent integrated source-build deployment and version 5 digest also passed, without the registry opt-out. The earlier digest-pinned version 3 used project-local compatibility. See the [qualified scope](evidence-map.md#shared-registry-source-build-qualification); this is not fresh-from-empty certification. |
 | Foundry access/monitoring | Enabled by default in the application root, with narrower separate model/tool roles instead of broad AI Gateway User grants |
 | Insights connection | One project-level Terraform owner, using managed identity by default in the application root; not a claim of identical Bicep account-level topology |
 | Gateway telemetry | Native OpenTelemetry is a two-stage Terraform path with an external GET-only readiness helper, not the Bicep mutation hook. Native gateway and agent traces were correlated for the accepted run; exporter migration and the Portal dashboard remain unqualified. |
-| Tool/application lifecycle | The explicit-credential tool runner requires exclusive ownership; creation is not atomic. The app-only azd helper deploys the agent, followed by explicit runtime identity binding and on-demand acceptance before the separate schedule gate. Terraform remains staged, not wrapped in native `azd up`. One live digest is accepted, not recurring execution, full credential rotation or teardown. |
+| Tool/application lifecycle | The explicit-credential tool runner requires exclusive ownership; creation is not atomic. The app-only azd helper deploys the agent, followed by explicit runtime identity binding and on-demand acceptance before the separate schedule gate. Current-source digest and routine dispatch are accepted; the routine is paused. Terraform remains staged, not wrapped in native `azd up`. Wall-clock scheduling, full credential rotation and teardown remain unqualified. |
 
 Do not run Bicep mutating hooks against Terraform-owned resources. Exporter
 kind migration can require deletion/recreation and is not automatic or approved

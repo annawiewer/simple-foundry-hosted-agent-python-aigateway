@@ -15,6 +15,10 @@ PROFILE_PINS = {
     "gpt-6-sol": ("gpt-6-sol", "2026-09-22", 20),
     "gpt-mini-latest": ("gpt-5.4-mini", "2026-03-17", 200),
 }
+REGISTRY_READBACK_RUNS = {
+    "agents_shared_registry_readback", "reject_registry_unshared_readback",
+    "reject_registry_nondefault_readback", "reject_registry_missing_readback",
+}
 
 
 def require(condition, message):
@@ -70,6 +74,25 @@ def check_lifecycle_masks(path, text):
     require(len(masks) == len(allowed) <= 1, f"{path}: broad lifecycle masking forbidden")
 
 
+def check_test_runs(path, text):
+    mocks = list(blocks(text, "mock_provider"))
+    require(any(names == ["azapi"] for names, _ in mocks), f"{path}: every test file must mock AzAPI")
+    require(not list(blocks(text, "provider")), f"{path}: real provider configuration forbidden")
+    runs = list(blocks(text, "run"))
+    require(runs, f"{path}: native regression runs missing")
+    for names, body in runs:
+        if re.search(r'\bcommand\s*=\s*plan\b', body):
+            continue
+        # These GET postconditions are deferred until the preceding mock PATCH.
+        require(path == ROOT / "tests" / "agents.tftest.hcl" and
+                names[0] in REGISTRY_READBACK_RUNS and
+                re.search(r'\bcommand\s*=\s*apply\b', body) and
+                not re.search(r'\bproviders\s*=', body) and
+                len(mocks) == 1 and not re.search(r'\balias\s*=', mocks[0][1]) and
+                re.search(r'\bsource\s*=\s*"\./modules/foundry-agents"', body),
+                f"{path}: apply is restricted to the isolated registry mock-provider cases")
+
+
 def check_structure():
     modules = ROOT / "modules"
     require({p.name for p in modules.iterdir() if p.is_dir()} ==
@@ -103,11 +126,7 @@ def check_structure():
             require(not re.search(r"-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{30,}", text),
                     f"Credential fixture forbidden: {path}")
             if path.name.endswith(".tftest.hcl"):
-                require('mock_provider "azapi"' in text, f"{path}: every test file must mock AzAPI")
-                require(not list(blocks(text, "provider")), f"{path}: real provider configuration forbidden")
-                runs = list(blocks(text, "run"))
-                require(runs and all(re.search(r'\bcommand\s*=\s*plan\b', b) for _, b in runs),
-                        f"{path}: offline regression must never apply")
+                check_test_runs(path, text)
                 for source in re.findall(r'\bsource\s*=\s*"([^"]+)"', text):
                     target = (ROOT / source).resolve()
                     require(target.is_relative_to(ROOT) and target.is_dir(),
@@ -257,7 +276,8 @@ def check_models(resources, profile=None):
     require(deployments, "Model module must own actual deployments")
     for deployment in deployments.values():
         p = properties(deployment)
-        require(p["raiPolicyName"] == "Microsoft.DefaultV2", "Backend safety binding removed")
+        require("raiPolicyName" not in p,
+                "Backend RAI policy selection must be omitted, matching the Bicep deployment request")
         if profile:
             expected = profile["model_deployments"][deployment["name"]]
             require((p["model"]["name"], p["model"]["version"], p["model"]["format"],
@@ -404,7 +424,7 @@ def check_storage_network(resources, storage_access, other_access):
                     "Storage-only override changed monitoring defaults")
 
 
-def check_agents(resources, remote_tool=False, monitoring=False, shared_registry=False):
+def check_agents(resources, remote_tool=False, monitoring=False, shared_registry=False, shared_remote_tool=True):
     storage = one(resources, "Microsoft.Storage/storageAccounts@2024-01-01")
     registry = one(resources, "Microsoft.ContainerRegistry/registries@2023-07-01")
     project = one(resources, "Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview")
@@ -412,7 +432,8 @@ def check_agents(resources, remote_tool=False, monitoring=False, shared_registry
             "Storage key/public Blob access regressed")
     require(registry["body"]["sku"]["name"] == "Premium" and properties(registry)["adminUserEnabled"] is False,
             "Registry SKU/admin boundary regressed")
-    connections = [r for r in resources.values() if "/projects/connections@" in r.get("type", "")]
+    connections = [r for address, r in resources.items()
+                   if "/projects/connections@" in r.get("type", "") and "azapi_resource_action." not in address]
     categories = {"AzureStorageAccount", "ContainerRegistry", "AppInsights"} | ({"RemoteTool"} if remote_tool else set())
     require({properties(r)["category"] for r in connections} == categories,
             "Support connections and optional RemoteTool must have explicit ownership")
@@ -423,7 +444,7 @@ def check_agents(resources, remote_tool=False, monitoring=False, shared_registry
             require(connection["type"].endswith("@2025-06-01") and connection["name"] == "aigw-github" and
                     p == {"category": "RemoteTool", "authType": "ProjectManagedIdentity",
                           "audience": "https://azure-api.net/aigateway", "target": p["target"],
-                          "isSharedToAll": True, "metadata": {"type": "custom_MCP"}},
+                          "isSharedToAll": shared_remote_tool, "metadata": {"type": "custom_MCP"}},
                     "RemoteTool must retain the upstream project-identity auth/metadata without credentials")
         elif p["category"] == "AppInsights":
             require(connection["type"].endswith("@2025-06-01") and
@@ -434,16 +455,27 @@ def check_agents(resources, remote_tool=False, monitoring=False, shared_registry
                     "isDefault" not in p and "sharedUserList" not in p, "Project Insights contract drift")
         elif p["category"] == "ContainerRegistry":
             require(p["authType"] == "ManagedIdentity" and p["isSharedToAll"] is shared_registry and
+                    p.get("isDefault") is True and
                     p["target"] == registry["output"]["properties"]["loginServer"] and
                     p["credentials"] == {"clientId": project["identity"][0]["principal_id"],
                                          "resourceId": registry["id"]} and
                     p["metadata"] == {"ResourceId": registry["id"]},
-                    "Registry connection identity/sharing drift")
+                    "Registry connection identity/sharing/default-selection drift")
         else:
             require(p["authType"] == "AAD", "Storage connection must remain AAD")
     account_connections = of_type(resources, "Microsoft.CognitiveServices/accounts/connections@2025-06-01")
     prefix = next(address for address in
                   of_type(resources, "Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview")).removesuffix("azapi_resource.project")
+    sharing_actions = [r for address, r in resources.items()
+                       if address.startswith(prefix + "azapi_resource_action.registry_connection_sharing[")]
+    require(len(sharing_actions) == int(shared_registry), "Registry reconciliation must follow the sharing opt-in")
+    if shared_registry:
+        owner = resources[prefix + "azapi_resource.registry_connection"]
+        action = sharing_actions[0]
+        require(action["method"] == "PATCH" and action["when"] == "apply" and
+                action["resource_id"] == owner["id"] and action["type"] == owner["type"] and
+                action["body"] == owner["body"],
+                "Registry reconciliation must preserve the sole owner/API and full managed-identity payload")
     publishers = [r for address, r in of_type(resources, "Microsoft.Authorization/roleAssignments@2022-04-01").items()
                   if address.startswith(prefix) and properties(r)["roleDefinitionId"].endswith("3913510d-42f4-4e42-8a64-420c390055eb")]
     if monitoring:
@@ -482,6 +514,10 @@ def check_agents(resources, remote_tool=False, monitoring=False, shared_registry
 def check_plans():
     messages = [json.loads(line) for line in sys.stdin if line.strip()]
     plans = {m["@testrun"]: m["test_plan"] for m in messages if m.get("type") == "test_plan"}
+    passed_runs = {m["@testrun"] for m in messages
+                   if m.get("type") == "test_run" and m["test_run"].get("status") == "pass"}
+    require(REGISTRY_READBACK_RUNS <= passed_runs,
+            "Registry readback postconditions must be exercised with provider-mocked applies")
     expected = {"root_default", "root_minimal", "root_custom", "root_single_group", "gateway_module", "models_module",
                 "agents_module", "gateway_only", "existing_models", "existing_models_pregranted",
                 "models_only", "agent_support_only", "root_replacement_profile", "root_backend_revision", "existing_models_custom_profile",
@@ -504,10 +540,10 @@ def check_plans():
         "reject_hosted_agent_account_identity", "reject_hosted_agent_project_identity",
         "reject_duplicate_hosted_gateway_owners",
     }
-    expected |= {"agents_monitoring_integration", "root_monitoring_integration",
-                 "root_all_integrations", "root_project_local_registry",
+    expected |= {"agents_monitoring_integration", "agents_shared_registry", "root_monitoring_integration",
+                 "root_all_integrations", "root_project_local_registry", "root_project_local_remote_tool",
                  "agent_support_monitoring_integration", "alias_protocol_intersection"}
-    expected |= {"root_content_safety_overrides", "root_content_safety_disabled",
+    expected |= {"root_content_safety_overrides", "root_content_safety_disabled", "root_optional_request_limits",
                  "existing_models_content_safety", "models_gateway_safety_metadata"}
     native_ready = {"native_telemetry_ready", "root_native_telemetry", "gateway_only_native", "existing_models_native"}
     legacy = {"gateway_legacy_telemetry", "root_legacy_telemetry"}
@@ -538,15 +574,18 @@ def check_plans():
         require(not any("/toolServers@" in r.get("type", "") for r in resources.values()),
                 "ToolServer ownership belongs to the explicit-credential runner, never Terraform")
         accounts = of_type(resources, "Microsoft.CognitiveServices/accounts@2025-04-01-preview")
+        project_parents = {r["parent_id"] for r in
+                           of_type(resources, "Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview").values()}
         for account in accounts.values():
-            require(properties(account)["allowProjectManagement"] is True and properties(account)["disableLocalAuth"] is True,
-                    f"{name}: account project management/local auth drift")
+            require(properties(account)["allowProjectManagement"] is (account["id"] in project_parents) and
+                    properties(account)["disableLocalAuth"] is True,
+                    f"{name}: only the agent/project account may enable project management; local auth must remain disabled")
         if name.startswith("root_"):
             gateway = check_gateway(resources, telemetry)
             model_access, tool_access, monitoring, shared_registry = root_settings.get(name, (True, True, True, True))
             check_agents(resources, name in {"root_remote_tool", "root_both_integrations", "root_all_integrations",
-                                            "root_project_local_registry"},
-                         monitoring, shared_registry)
+                                            "root_project_local_registry", "root_project_local_remote_tool"},
+                         monitoring, shared_registry, shared_remote_tool=name != "root_project_local_remote_tool")
             check_roles(resources, custom=name == "root_custom",
                         foundry_gateway_access=model_access,
                         monitoring=monitoring, tool_access=tool_access,
@@ -591,9 +630,13 @@ def check_plans():
                 check_models(resources, profile)
                 selected_profile = json.loads(json.dumps(profile))
                 for key, model in selected_profile["model_deployments"].items():
-                    model["content_safety_severity"] = "Medium"
+                    model.update(content_safety_severity="Medium", request_limit=None)
                     if name == "root_custom":
                         model.update(cost_limit=None, request_limit=7, content_safety_severity=None)
+                    elif name == "root_optional_request_limits":
+                        model["request_limit"] = {
+                            "gpt-latest": 1, "gpt-6-sol": None, "gpt-mini-latest": None,
+                        }[key]
                     elif name == "root_content_safety_disabled":
                         model["content_safety_severity"] = None
                     elif name == "root_content_safety_overrides":
@@ -654,8 +697,9 @@ def check_plans():
             require(not any("Microsoft.ApiManagement/" in r.get("type", "") or "/projects@" in r.get("type", "")
                             for r in resources.values()), "Models-only acquired gateway/agent ownership")
         elif name in {"agents_module", "agent_support_only", "agents_storage_enabled_override", "agent_support_storage_disabled",
-                      "agents_monitoring_integration", "agent_support_monitoring_integration"}:
-            check_agents(resources, monitoring=name.endswith("monitoring_integration"))
+                      "agents_monitoring_integration", "agent_support_monitoring_integration", "agents_shared_registry"}:
+            check_agents(resources, monitoring=name.endswith("monitoring_integration"),
+                         shared_registry=name == "agents_shared_registry")
             if name == "agents_storage_enabled_override":
                 check_storage_network(resources, "Enabled", "Disabled")
             elif name == "agent_support_storage_disabled":
@@ -700,8 +744,8 @@ def check_plans():
     ):
         require(set(resource_map(plans[run])) == set(resource_map(plans[baseline])),
                 f"{run}: content safety must not change resource ownership")
-    require(len(minimal) == 32 and len(default) == 37,
-            "Native stage one defers the exporter; the full root still adds exactly five grants to the minimal graph")
+    require(len(minimal) == 32 and len(default) == 38,
+            "The full root adds five grants and one non-owning registry PATCH; native stage one defers the exporter")
     hosted = resource_map(plans["root_hosted_agent_runtime_access"])
     require(set(hosted) - set(default) == {
                 f'azapi_resource.hosted_agent_runtime_access["{role}-{label}"]'
@@ -722,8 +766,9 @@ def check_plans():
                 'azapi_resource.foundry_gateway_tool_access["project"]',
                 'module.foundry_agents.azapi_resource.role_assignment["monitoring-account"]',
                 'module.foundry_agents.azapi_resource.role_assignment["monitoring-project"]',
+                'module.foundry_agents.azapi_resource_action.registry_connection_sharing[0]',
             } and not set(minimal) - set(default),
-            "Default full-root wiring must preserve every existing owner and add only the five scoped grants")
+            "Default wiring must preserve every existing owner and add only five grants and the registry PATCH")
     for run, additions in (("root_foundry_gateway_model_access", 2), ("root_foundry_gateway_tool_access", 1),
                            ("root_remote_tool", 1),
                            ("root_both_integrations", 3)):
@@ -754,9 +799,10 @@ def check_plans():
         )}
         if run == "root_all_integrations":
             expected_added.add('azapi_resource.foundry_gateway_tool_access["project"]')
+            expected_added.add(prefix + "azapi_resource_action.registry_connection_sharing[0]")
         require(set(resources) - set(retained) == expected_added and
                 not set(retained) - set(resources),
-                f"{run}: only the selected monitoring/tool grants may be added; preserve every existing connection address")
+                f"{run}: only selected grants and the sharing action may be added; preserve every existing connection address")
     spec = importlib.util.spec_from_file_location("export_environment", ROOT / "scripts" / "export_environment.py")
     adapter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adapter)
@@ -817,11 +863,14 @@ def check_plans():
     require(default[gateway_address]["name"] == revised[gateway_address]["name"], "Backend revision renamed retained gateway")
     for address in ("module.foundry_models.azapi_resource.models", "module.foundry_agents.azapi_resource.agents"):
         require(default[address]["name"] != revised[address]["name"], "Backend revision failed to isolate rebuilt backend")
-    counts = {scope: sum(a.startswith("module." + scope + ".") for a in default)
+    owners = {r["address"] for r in plans["root_default"]["resource_changes"]
+              if r["mode"] == "managed" and r["type"] == "azapi_resource"}
+    counts = {scope: sum(a.startswith("module." + scope + ".") for a in owners)
               for scope in ("foundry_models", "ai_gateway", "foundry_agents")}
-    counts["root"] = sum(not a.startswith("module.") for a in default)
+    counts["root"] = sum(not a.startswith("module.") for a in owners)
     roles = len(of_type(default, "Microsoft.Authorization/roleAssignments@2022-04-01"))
-    print(f"Default root observation: {len(default)} managed resources, {roles} scoped roles; owners={counts}")
+    print(f"Default root observation: {len(owners)} Azure owners, {len(default) - len(owners)} non-owning action, "
+          f"{roles} scoped roles; owners={counts}")
     print(f"PASS {len(plans)} real native mock plans; {summaries[-1]['passed']} Terraform runs; semantic contracts inspected")
 
 

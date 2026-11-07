@@ -1,14 +1,19 @@
 # Terraform infrastructure
 
 A self-contained, fresh-deployment Terraform alternative for the standalone
-AI Gateway and Foundry support infrastructure. Existing Bicep, application and
-`azure.yaml` defaults are unchanged. The gateway resource family is
+AI Gateway and Foundry support infrastructure, with an explicit path through
+the shared hosted application and daily routine. Bicep remains the default
+deployment option. The gateway resource family is
 `Microsoft.ApiManagement/aigateways`, not classic API Management
 `Microsoft.ApiManagement/service`.
 
-**The end-to-end on-demand hosted digest was verified on November 7, 2026:**
-Terraform infrastructure, hosted agent, AI Gateway/model, all three real GitHub
-tools and correlated agent/gateway telemetry. The gateway API is
+**The shared/default registry and normal container source-build path were
+verified on November 7, 2026:** an integrated ACR build deployed agent version 5,
+which completed all three GitHub tools through AI Gateway with correlated
+agent/gateway telemetry. Its configured image uses a tag, independently checked
+against the build digest before and after inference. The earlier digest-pinned
+version 3 and manual daily-routine dispatch also remain accepted; the routine
+is disabled, and an actual 09:00 scheduler firing was not observed. The gateway API is
 `2025-09-01-preview`, aligned with the upstream Bicep path. This is one accepted
 runtime path, not certification of every build, credential or lifecycle scenario.
 See the [acceptance matrix and precise boundaries](docs/evidence-map.md#acceptance-matrix).
@@ -18,7 +23,9 @@ See the [acceptance matrix and precise boundaries](docs/evidence-map.md#acceptan
 Follow the single [offline and deployment-preparation route](docs/architecture.md#offline-and-deployment-preparation).
 For the complete staged route through the agent and optional daily schedule,
 follow the [guided application flow](docs/application-flow.md). It keeps
-Terraform plan/apply explicit and does not change the root Bicep manifest.
+Terraform plan/apply explicit and does not invoke Bicep provisioning hooks.
+Both manifests use the supported camelCase routine-authoring fields; the root
+manifest's existing agent, schedule and fixed repository prompt are preserved.
 The compatibility baseline is Terraform **1.11.4**, locked AzAPI **2.13.0**,
 PowerShell 7 and Python 3. Offline checks need no Azure credentials; uncached
 locked providers still require registry access.
@@ -44,8 +51,12 @@ their minimal defaults. Existing users should review the
 before planning an upgrade.
 
 Registry sharing remains the Bicep-matching default request, not a requirement
-for project-local application access. See the [explicit compatibility choice](docs/architecture.md#project-local-registry-compatibility)
-when Azure returns the owned connection unshared.
+for project-local application access. Shared mode follows the connection owner
+with a native PATCH and independent blocking readback. See the
+[accepted infrastructure repair and explicit project-local opt-out](docs/architecture.md#project-local-registry-compatibility);
+the [normal source-build qualification](docs/evidence-map.md#shared-registry-source-build-qualification)
+then verified deployment and runtime use without the project-local registry opt-out.
+This is an existing-environment result, not fresh-from-empty certification.
 
 After deploying the agent, its actual identity can differ from both Foundry
 support identities. The opt-in `hosted_agent_principals` map supplies that
@@ -68,11 +79,17 @@ explicit map omits that model's policy; the string `"None"` is not accepted.
 To preserve the previous root policy omission, provide your full deployment
 map with null severities. Keep deployment keys compatible with `model_aliases`.
 
-This is a gateway model policy, not MCP protection or a change to the separate
-`Microsoft.DefaultV2` backend filter. Review the policy-body changes in a fresh
-plan before upgrading. A disposable selected-2025-API probe returned all four
-Medium severities; neither that readback nor the offline contracts prove safety
-enforcement. See the [acceptance matrix](docs/evidence-map.md).
+This is a gateway model policy, not MCP protection. Both IaC paths omit an
+explicit backend `raiPolicyName`; backend filtering remains a separate service
+control, and omission does not establish its effective policy or disable it.
+Review a fresh plan and the backend policy readback before upgrading. A
+disposable selected-2025-API probe returned all four Medium severities; neither
+that readback nor the offline contracts prove safety enforcement. See the
+[acceptance matrix](docs/evidence-map.md).
+
+The bundled profile also matches Bicep by omitting a request-rate policy;
+token and cost limits remain configured. An explicit replacement profile can
+still select a positive per-identity `request_limit` in requests per minute.
 
 ## Application and telemetry boundaries
 
@@ -93,9 +110,9 @@ environment adapter and [GET-only live qualification runner](docs/live-readback.
 remain separate from application deployment.
 
 See [ownership, state and API differences](docs/architecture.md) and the
-[validation and acceptance guide](docs/evidence-map.md). Recurring execution,
-credential lifecycle guarantees and full teardown remain separate qualifications;
-no schedule was enabled by the accepted on-demand run.
+[validation and acceptance guide](docs/evidence-map.md). Scheduled wall-clock
+execution, credential lifecycle guarantees and full teardown remain separate
+qualifications; routine configuration and manual dispatch are accepted.
 The [application helper](docs/application-flow.md) now provides offline preparation
 and separately confirmed app-only azd deployment; it neither replaces Terraform
 nor installs tools, grants roles or reuses Bicep hooks. The

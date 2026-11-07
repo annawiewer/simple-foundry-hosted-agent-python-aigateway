@@ -4,11 +4,13 @@ import asyncio
 import json
 import os
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import httpx
 import mcp
+import yaml
 from agent_framework import Agent, FunctionInvocationContext
 from agent_framework._tools import _validate_arguments_against_schema
 from agent_framework.openai import OpenAIChatClient
@@ -21,6 +23,30 @@ from openai import AsyncOpenAI, Omit
 from github_mcp_middleware import compact_github_results
 import main
 import repo_digest_agent
+
+
+class RoutineAuthoringTests(unittest.TestCase):
+    def test_routine_resolves_its_hosted_agent_and_canonical_schedule(self) -> None:
+        manifest = yaml.safe_load(
+            (Path(__file__).resolve().parents[1] / "azure.yaml").read_text(encoding="utf-8")
+        )
+        services = manifest["services"]
+        routines = {name: service for name, service in services.items() if service["host"] == "azure.ai.routine"}
+        self.assertTrue(routines)
+        for name, routine in routines.items():
+            with self.subTest(routine=name):
+                action = routine["action"]
+                self.assertNotIn("agent_name", action)
+                agent = action["agentName"]
+                self.assertIn(agent, routine["uses"])
+                self.assertEqual(services[agent]["host"], "azure.ai.agent")
+                schedules = [trigger for trigger in routine["triggers"].values() if trigger["type"] == "schedule"]
+                self.assertTrue(schedules)
+                for trigger in schedules:
+                    self.assertNotIn("cron_expression", trigger)
+                    self.assertNotIn("time_zone", trigger)
+                    self.assertTrue(trigger["cronExpression"])
+                    self.assertTrue(trigger["timeZone"])
 
 
 class AgentConstructionTests(unittest.TestCase):
