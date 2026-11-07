@@ -36,13 +36,13 @@ CONFIG = {"owner_id": OWNER, "repository": "example/repository", "allowed_client
 BODY = {"properties": {
     "displayName": "GitHub repository digest",
     "description": "Read-only GitHub tools for repository digests. Owner: terraform-toolchain/" + OWNER,
-    "type": "mcp", "failureMode": "failClosed",
+    "type": "mcp",
     "policies": [
-        {"type": "contentSafety", "hateSeverity": "Medium", "selfHarmSeverity": "Medium",
+        {"type": "contentSafety", "scope": "resource", "hateSeverity": "Medium", "selfHarmSeverity": "Medium",
          "sexualSeverity": "Medium", "violenceSeverity": "Medium"},
-        {"type": "ipFilter", "action": "Allow", "cidrRanges": ["203.0.113.42/32"]},
+        {"type": "ipFilter", "scope": "resource", "action": "Allow", "cidrRanges": ["203.0.113.42/32"]},
     ],
-    "endpoints": [{"namespace": "github", "kind": "mcp",
+    "endpoints": [{"namespace": "github", "kind": "mcp", "required": True,
                    "mcp": {"url": "https://api.githubcopilot.com/mcp/", "transport": "streamableHttp"},
                    "credentials": {"type": "header", "headers": {
                        "X-MCP-Readonly": ["true"], "X-MCP-Tools": ["list_pull_requests,list_issues,actions_list"],
@@ -50,6 +50,14 @@ BODY = {"properties": {
 }}
 HASH = hashlib.sha256(json.dumps(
     {"configuration": CONFIG, "body": BODY}, sort_keys=True, separators=(",", ":"),
+).encode()).hexdigest()
+LEGACY_BODY = copy.deepcopy(BODY)
+LEGACY_BODY["properties"]["failureMode"] = "failClosed"
+LEGACY_BODY["properties"]["endpoints"][0].pop("required")
+for policy in LEGACY_BODY["properties"]["policies"]:
+    policy.pop("scope")
+LEGACY_HASH = hashlib.sha256(json.dumps(
+    {"configuration": CONFIG, "body": LEGACY_BODY}, sort_keys=True, separators=(",", ":"),
 ).encode()).hexdigest()
 
 
@@ -63,25 +71,41 @@ def bootstrap(connected=False):
     }
 
 
-def receipt(status="configured", connected=False):
+def receipt(status="configured", connected=False, version=2):
     source = bootstrap(connected)
     return {
-        "version": 1, "operation": "create-toolserver", "status": status,
+        "version": version, "operation": "create-toolserver", "status": status,
         "binding": {key: source[key] for key in (
             "subscription_id", "gateway_id", "workspace_id", "gateway_endpoint",
             "api_version", "project_id", "project_endpoint",
         )} | {"tenant_id": TENANT},
-        "configuration": copy.deepcopy(CONFIG), "configuration_hash": HASH, "mutation_attempted": True,
+        "configuration": copy.deepcopy(CONFIG),
+        "configuration_hash": LEGACY_HASH if version == 1 else HASH, "mutation_attempted": True,
         "toolserver": {"etag": '"revision-1"', "endpoint": MCP},
     }
 
 
-def server_response(etag='"revision-1"'):
-    result = copy.deepcopy(BODY)
+def server_response(etag='"revision-1"', version=2):
+    result = copy.deepcopy(LEGACY_BODY if version == 1 else BODY)
     result.update(id=SERVER_ID, etag=etag)
     result["properties"].update(mcpEndpointUrl=MCP, provisioningState="Succeeded", state="Ready")
     result["properties"]["endpoints"][0].pop("credentials")
     result["properties"]["endpoints"][0].update(id="generated-source-id", credentials={"type": "header"})
+    return result
+
+
+def observed_server_response(required=True):
+    result = server_response()
+    properties = result["properties"]
+    for key in ("mcpEndpointUrl", "provisioningState", "state"):
+        properties.pop(key)
+    properties["gatewayEndpoints"] = [{
+        "api": "mcp", "url": MCP, "baseUrl": "https://gateway.example.invalid/ServiceReturned/ActualRoute/",
+    }]
+    properties["endpoints"][0]["required"] = required
+    properties["endpoints"][0]["credentials"]["headers"] = {
+        "Authorization": None, "X-MCP-Readonly": None, "X-MCP-Tools": None,
+    }
     return result
 
 
@@ -92,17 +116,18 @@ def connection_response():
     }}
 
 
-def toolbox_request():
+def toolbox_request(version=2):
     return {"description": "Read-only GitHub MCP through AI Gateway",
-            "metadata": {"terraform_toolchain_owner": OWNER, "terraform_toolchain_configuration": HASH},
+            "metadata": {"terraform_toolchain_owner": OWNER,
+                         "terraform_toolchain_configuration": LEGACY_HASH if version == 1 else HASH},
             "tools": [{"type": "mcp", "server_label": "aigw-github", "project_connection_id": "aigw-github",
                        "require_approval": "never"}]}
 
 
-def box_reads(version="7"):
+def box_reads(version="7", receipt_version=2):
     return [
         (200, {"name": "digest", "default_version": version}, None),
-        (200, {**toolbox_request(), "name": "digest", "version": version, "skills": []}, None),
+        (200, {**toolbox_request(receipt_version), "name": "digest", "version": version, "skills": []}, None),
     ]
 
 
@@ -141,12 +166,12 @@ class ToolchainTests(unittest.TestCase):
                 "--tenant-id", TENANT, "--receipt", str(receipt_path)]
         if previous is not None:
             previous_path = prefix.with_suffix(".previous.jsonl")
-            previous_path.write_text(json.dumps(previous) + "\n", encoding="utf-8")
+            previous_path.write_text(json.dumps(previous) + "\n", encoding="utf-8", newline="\n")
             args += ["--previous-receipt", str(previous_path)]
         if defaults:
             if operation in tools.WRITE_ACTIONS:
                 args += ["--confirm-exclusive-owner"]
-            if operation in {"create-toolserver", "rotate-credential"}:
+            if operation in tools.CREDENTIAL_ACTIONS:
                 args += ["--credential-env", "SELECTED_TEST_CREDENTIAL", "--confirm-read-only-credential"]
             if operation == "create-toolserver":
                 args += ["--repository", "example/repository", "--allow-client-cidr", "203.0.113.42/32"]
@@ -170,7 +195,7 @@ class ToolchainTests(unittest.TestCase):
     def test_create_preserves_exact_body_and_service_returned_endpoint(self):
         target = self.root / "tools.ready.tfvars.json"
         result = self.run_main("create-toolserver", [
-            missing_server(), (201, {"echo": GITHUB_TOKEN}, None), (200, server_response(), '"revision-1"'),
+            missing_server(), (201, {"echo": GITHUB_TOKEN}, None), (200, observed_server_response(), '"revision-1"'),
         ], extra=["--tfvars", str(target)])
         code, records, arm, foundry, _, _, _ = result
         self.assertEqual(code, 0)
@@ -185,6 +210,298 @@ class ToolchainTests(unittest.TestCase):
         self.assertEqual([r["status"] for r in records], ["prepared", "pending", "configured"])
         self.assertEqual(records[-1]["configuration_hash"], HASH)
         self.assertEqual(json.loads(target.read_text()), {"gateway_remote_tool_endpoint": MCP})
+
+    def test_get_accepts_only_known_null_credential_placeholders(self):
+        for headers in (None, {}, {"Authorization": None}, {
+            "Authorization": None, "X-MCP-Readonly": None, "X-MCP-Tools": None,
+        }):
+            response = observed_server_response()
+            response["properties"]["endpoints"][0]["credentials"]["headers"] = headers
+            original = copy.deepcopy(response)
+            with self.subTest(headers=headers):
+                self.assertEqual(tools.server_readback(response, None, bootstrap(), CONFIG),
+                                 {"etag": '"revision-1"', "endpoint": MCP})
+                self.assertEqual(response, original)
+        for headers in (
+            {"Authorization": GITHUB_TOKEN}, {"Authorization": [GITHUB_TOKEN]},
+            {"Authorization": "***"}, {"Authorization": ["***"]},
+            {"Authorization": ""}, {"Authorization": []}, {"Authorization": [None]},
+            {"X-Unknown": None}, {"authorization": None}, [],
+        ):
+            response = observed_server_response()
+            response["properties"]["endpoints"][0]["credentials"]["headers"] = headers
+            with self.subTest(shape=type(headers).__name__), self.assertRaisesRegex(
+                ValueError, "unsupported credential-header data",
+            ) as error:
+                tools.server_readback(response, None, bootstrap(), CONFIG)
+            self.assertNotIn(GITHUB_TOKEN, str(error.exception))
+
+    def test_gateway_endpoint_metadata_is_unambiguous_and_never_guessed(self):
+        for legacy in (False, True):
+            response = observed_server_response()
+            if legacy:
+                response["properties"]["mcpEndpointUrl"] = MCP
+            response["properties"]["gatewayEndpoints"][0].pop("baseUrl")
+            self.assertEqual(tools.server_readback(response, None, bootstrap(), CONFIG)["endpoint"], MCP)
+        partial = observed_server_response()
+        partial["properties"]["gatewayEndpoints"] = []
+        self.assertIsNone(tools.server_readback(partial, None, bootstrap(), CONFIG))
+        cases = []
+        for entries in (
+            None, {}, [None], [{"url": MCP}], [{"api": "responses", "url": MCP}],
+            [{"api": "mcp", "url": MCP, "unknown": None}],
+            [{"api": "mcp", "url": MCP}, {"api": "mcp", "url": MCP}],
+        ):
+            response = observed_server_response()
+            response["properties"]["gatewayEndpoints"] = entries
+            cases.append(response)
+        for key, value in (
+            ("url", "https://other.example.invalid/mcp"),
+            ("url", "https://user:password@gateway.example.invalid/mcp"),
+            ("url", MCP + "?key=hidden"), ("url", MCP + "#hidden"),
+            ("url", "https://gateway.example.invalid/%73ecret"),
+            ("url", "https://gateway.example.invalid/"), ("url", "http://gateway.example.invalid/mcp"),
+            ("baseUrl", "https://other.example.invalid/"),
+            ("baseUrl", "https://user:password@gateway.example.invalid/"),
+            ("baseUrl", "https://gateway.example.invalid/?key=hidden"),
+            ("baseUrl", "https://gateway.example.invalid/%53erviceReturned/"),
+            ("baseUrl", "https://gateway.example.invalid/Unrelated/"),
+        ):
+            response = observed_server_response()
+            response["properties"]["gatewayEndpoints"][0][key] = value
+            cases.append(response)
+        response = observed_server_response()
+        response["properties"]["mcpEndpointUrl"] = "https://gateway.example.invalid/Conflicting/mcp/"
+        cases.append(response)
+        for response in cases:
+            original = copy.deepcopy(response)
+            with self.subTest(properties=list(response["properties"])), self.assertRaises(ValueError):
+                tools.server_readback(response, None, bootstrap(), CONFIG)
+            self.assertEqual(response, original)
+
+    def test_fail_closed_and_resource_policy_scope_are_required(self):
+        for version in (1, 2):
+            for required in (False, None, 0, 1, "true", "missing"):
+                response = observed_server_response(required)
+                if required == "missing":
+                    response["properties"]["endpoints"][0].pop("required")
+                with self.subTest(version=version, required=required), self.assertRaisesRegex(
+                    ValueError, "fail-closed endpoint behavior",
+                ):
+                    tools.server_readback(response, None, bootstrap(), CONFIG, version=version)
+            for failure_mode in ("failOpen", None, False):
+                response = observed_server_response()
+                response["properties"]["failureMode"] = failure_mode
+                with self.subTest(version=version, failure_mode=failure_mode), self.assertRaisesRegex(
+                    ValueError, "conflicting failure behavior",
+                ):
+                    tools.server_readback(response, None, bootstrap(), CONFIG, version=version)
+            for scope in ("workspace", "all", None, True):
+                response = observed_server_response()
+                response["properties"]["policies"][0]["scope"] = scope
+                with self.subTest(version=version, scope=scope), self.assertRaisesRegex(ValueError, "policy scope"):
+                    tools.server_readback(response, None, bootstrap(), CONFIG, version=version)
+        response = observed_server_response()
+        response["properties"]["policies"][0].pop("scope")
+        with self.assertRaisesRegex(ValueError, "policy scope"):
+            tools.server_readback(response, None, bootstrap(), CONFIG)
+        for section in ("policies", "endpoints"):
+            response = observed_server_response()
+            response["properties"][section][0]["unknown"] = True
+            with self.subTest(section=section), self.assertRaisesRegex(ValueError, "drift"):
+                tools.server_readback(response, None, bootstrap(), CONFIG)
+        with self.assertRaisesRegex(ValueError, "fail-closed endpoint behavior"):
+            tools.server_readback(server_response(version=1), None, bootstrap(), CONFIG)
+
+    def test_legacy_receipts_inspect_without_rehashing_or_authorizing_writes(self):
+        previous = receipt(version=1)
+        for response in (server_response(version=1), observed_server_response()):
+            result = self.run_main("inspect-toolserver", [(200, response, None)], previous=previous)
+            self.assertEqual(result[0], 0)
+            self.assertEqual((result[1][-1]["version"], result[1][-1]["configuration_hash"]), (1, LEGACY_HASH))
+            self.assertFalse(result[1][-1]["mutation_attempted"])
+            result[2].call.assert_called_once_with("GET", SERVER_ID, "2025-09-01-preview")
+        for operation in ("rotate-credential", "create-toolbox"):
+            with self.subTest(operation=operation):
+                result = self.run_main(operation, previous=previous)
+                self.assertEqual((result[0], result[1]), (2, []))
+                self.assertIn("Version-1 receipts are read-only", result[-1])
+                result[4].assert_not_called()
+                result[2].call.assert_not_called()
+                result[3].call.assert_not_called()
+
+    def test_receipt_version_and_hash_are_bound_throughout_journal(self):
+        for version, digest in ((1, HASH), (2, LEGACY_HASH), (True, LEGACY_HASH), (0, HASH), (3, HASH)):
+            previous = receipt()
+            previous.update(version=version, configuration_hash=digest)
+            with self.subTest(version=version, digest=digest):
+                result = self.run_main("inspect-toolserver", previous=previous)
+                self.assertEqual((result[0], result[1]), (2, []))
+                result[4].assert_not_called()
+        path = self.root / "mixed-versions.jsonl"
+        text = json.dumps(receipt(version=1)) + "\n" + json.dumps(receipt()) + "\n"
+        path.write_text(text, encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "ownership or operation"):
+            tools.read_receipt(path, bootstrap(), TENANT)
+        self.assertEqual(path.read_text(encoding="utf-8"), text)
+
+    def test_explicit_repair_preserves_legacy_bytes_identity_and_request_configuration(self):
+        previous = receipt(status="unconfirmed", version=1)
+        previous.pop("toolserver")
+        legacy_bytes = (json.dumps(previous) + "\n").encode()
+        before = observed_server_response(required=False)
+        after = observed_server_response()
+        after["etag"] = '"revision-2"'
+        target = self.root / "repaired.tfvars.json"
+        result = self.run_main("repair-toolserver", [
+            (200, before, None), (200, {"echo": GITHUB_TOKEN}, None), (200, after, None),
+        ], previous=previous, extra=["--confirm-receipt-upgrade", "--tfvars", str(target)])
+        self.assertEqual(result[0], 0)
+        self.assertEqual((self.root / f"{self.counter}.previous.jsonl").read_bytes(), legacy_bytes)
+        self.assertEqual([r["status"] for r in result[1]], ["prepared", "pending", "configured"])
+        for record in result[1]:
+            self.assertEqual((record["version"], record["configuration_hash"]), (2, HASH))
+            self.assertEqual(record["upgraded_from_sha256"], hashlib.sha256(legacy_bytes).hexdigest())
+        expected = copy.deepcopy(BODY)
+        expected["properties"]["endpoints"][0]["id"] = "generated-source-id"
+        expected["properties"]["endpoints"][0]["credentials"]["headers"]["Authorization"] = ["Bearer " + GITHUB_TOKEN]
+        self.assertEqual(result[2].call.call_args_list, [
+            mock.call("GET", SERVER_ID, tools.API),
+            mock.call("PUT", SERVER_ID, tools.API, expected, '"revision-1"'),
+            mock.call("GET", SERVER_ID, tools.API),
+        ])
+        self.assertEqual(json.loads(target.read_text()), {"gateway_remote_tool_endpoint": MCP})
+        inspected = self.run_main("inspect-toolserver", [(200, after, None)], previous=result[1][-1])
+        self.assertEqual(inspected[0], 0)
+        self.assertEqual(inspected[1][-1]["upgraded_from_sha256"], hashlib.sha256(legacy_bytes).hexdigest())
+        self.assertFalse(inspected[1][-1]["mutation_attempted"])
+
+    def test_repair_requires_explicit_upgrade_and_original_consumed_legacy_create(self):
+        legacy = receipt(status="unconfirmed", version=1)
+        invalid = [receipt(), receipt(version=1)]
+        for changes in ({"mutation_attempted": False}, {"operation": "inspect-toolserver"},
+                        {"status": "prepared"}, {"toolbox": {"name": "digest"}}):
+            invalid.append({**legacy, **changes})
+        for previous, extra in [(legacy, [])] + [
+            (value, ["--confirm-receipt-upgrade"]) for value in invalid
+        ]:
+            with self.subTest(previous=previous, confirmed=bool(extra)):
+                result = self.run_main("repair-toolserver", previous=previous, extra=extra)
+                self.assertEqual((result[0], result[1]), (2, []))
+                result[4].assert_not_called()
+                result[2].call.assert_not_called()
+        result = self.run_main("inspect-toolserver", previous=legacy, extra=["--confirm-receipt-upgrade"])
+        self.assertEqual((result[0], result[1]), (2, []))
+        result[4].assert_not_called()
+
+    def test_repair_rejects_any_drift_besides_the_known_false_required_value(self):
+        responses = [observed_server_response(value) for value in (True, None, 0, 1, "false")]
+        for field, value in (
+            ("id", "other-resource"), ("etag", None),
+            ("description", "Different owner"), ("endpoint_id", None),
+            ("scope", "workspace"), ("headers", {"Authorization": GITHUB_TOKEN}),
+            ("gatewayEndpoints", [{"api": "mcp", "url": "https://wrong.example.invalid/mcp"}]),
+        ):
+            response = observed_server_response(required=False)
+            if field in ("id", "etag"):
+                response[field] = value
+            elif field == "endpoint_id":
+                response["properties"]["endpoints"][0]["id"] = value
+            elif field == "headers":
+                response["properties"]["endpoints"][0]["credentials"]["headers"] = value
+            elif field == "scope":
+                response["properties"]["policies"][0]["scope"] = value
+            else:
+                response["properties"][field] = value
+            responses.append(response)
+        for response in responses:
+            with self.subTest(response=response):
+                original = copy.deepcopy(response)
+                result = self.run_main("repair-toolserver", [(200, response, None)],
+                                       previous=receipt(status="unconfirmed", version=1),
+                                       extra=["--confirm-receipt-upgrade"])
+                self.assertEqual(result[0], 2)
+                self.assertFalse(result[1][-1]["mutation_attempted"])
+                result[2].call.assert_called_once_with("GET", SERVER_ID, tools.API)
+                self.assertEqual(response, original)
+
+    def test_repair_failure_is_not_retried_and_repair_receipt_cannot_replay_it(self):
+        for status in (0, 307, 400, 409, 412, 429, 500):
+            with self.subTest(status=status):
+                result = self.run_main("repair-toolserver", [
+                    (200, observed_server_response(required=False), None), (status, None, None),
+                ], previous=receipt(status="unconfirmed", version=1), extra=["--confirm-receipt-upgrade"])
+                self.assertEqual((result[0], result[2].call.call_count), (2, 2))
+                self.assertEqual(result[1][-1]["status"], "unconfirmed")
+                self.assertTrue(result[1][-1]["mutation_attempted"])
+                replay = self.run_main("repair-toolserver", previous=result[1][-1],
+                                       extra=["--confirm-receipt-upgrade"])
+                self.assertEqual((replay[0], replay[1]), (2, []))
+                replay[4].assert_not_called()
+
+    def test_repair_does_not_export_changed_endpoint_identity_or_incomplete_safety(self):
+        responses = [observed_server_response(required=False)]
+        changed_id = observed_server_response()
+        changed_id["properties"]["endpoints"][0]["id"] = "different-id"
+        responses.append(changed_id)
+        changed_url = observed_server_response()
+        changed_url["properties"]["gatewayEndpoints"][0]["url"] = MCP + "changed"
+        responses.append(changed_url)
+        for index, response in enumerate(responses):
+            target = self.root / f"blocked-repair-{index}.tfvars.json"
+            result = self.run_main("repair-toolserver", [
+                (200, observed_server_response(required=False), None), (200, None, None), (200, response, None),
+            ], previous=receipt(status="unconfirmed", version=1),
+                extra=["--confirm-receipt-upgrade", "--tfvars", str(target)])
+            self.assertEqual(result[0], 2)
+            self.assertFalse(target.exists())
+            self.assertEqual(result[1][-1]["status"], "unconfirmed")
+            self.assertEqual(result[2].call.call_count, 3)
+
+    def test_repair_provenance_cannot_change_inside_a_journal(self):
+        record = receipt()
+        record.update(operation="repair-toolserver", upgraded_from_sha256="a" * 64)
+        path = self.root / "repair-provenance.jsonl"
+        for changed in ({**record, "upgraded_from_sha256": "b" * 64},
+                        {**record, "upgraded_from_sha256": None},
+                        {key: value for key, value in record.items() if key != "upgraded_from_sha256"}):
+            path.write_text(json.dumps(record) + "\n" + json.dumps(changed) + "\n", encoding="utf-8")
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                tools.read_receipt(path, bootstrap(), TENANT)
+
+    def test_existing_fail_open_server_blocks_inspection_without_a_handoff(self):
+        target = self.root / "blocked.tfvars.json"
+        previous = receipt(status="unconfirmed", version=1)
+        result = self.run_main(
+            "inspect-toolserver", [(200, observed_server_response(required=False), None)],
+            previous=previous, extra=["--tfvars", str(target)],
+        )
+        self.assertEqual(result[0], 2)
+        self.assertIn("fail-closed endpoint behavior", result[-1])
+        self.assertNotIn("credential-header", result[-1])
+        self.assertEqual(result[1][-1]["status"], "unconfirmed")
+        self.assertEqual((result[1][-1]["version"], result[1][-1]["configuration_hash"]), (1, LEGACY_HASH))
+        self.assertFalse(result[1][-1]["mutation_attempted"])
+        self.assertFalse(target.exists())
+        result[2].call.assert_called_once_with("GET", SERVER_ID, "2025-09-01-preview")
+        result[3].call.assert_not_called()
+
+    def test_legacy_toolbox_inspection_preserves_original_metadata_hash(self):
+        previous = receipt(connected=True, version=1)
+        previous["operation"] = "create-toolbox"
+        previous["toolbox"] = {
+            "name": "digest", "version": "7",
+            "endpoint": PROJECT_ENDPOINT + "/toolboxes/digest/versions/7/mcp?api-version=v1",
+        }
+        result = self.run_main(
+            "inspect-toolbox", [(200, observed_server_response(), None), (200, connection_response(), None)],
+            box_reads(receipt_version=1), previous=previous,
+        )
+        self.assertEqual(result[0], 0)
+        self.assertEqual(result[1][-1]["configuration_hash"], LEGACY_HASH)
+        self.assertEqual(result[1][-1]["toolbox"], previous["toolbox"])
+        self.assertTrue(all(call.args[0] == "GET" for call in result[2].call.call_args_list
+                            + result[3].call.call_args_list))
 
     def test_create_never_adopts_existing_or_unqualified_missing_resource(self):
         for response in (
@@ -420,6 +737,35 @@ class ToolchainTests(unittest.TestCase):
         })
         self.assertEqual(records[-1]["toolbox"]["endpoint"], expected_endpoint)
 
+    def test_toolbox_accepts_explicit_unshared_connection_without_changing_it(self):
+        connection = connection_response()
+        connection["properties"]["isSharedToAll"] = False
+        code, records, arm, *_ = self.run_main(
+            "create-toolbox", [(200, server_response(), None), (200, connection, None)],
+            [(404, None, None), (201, {"name": "digest", "version": "7"}, None), *box_reads()],
+            previous=receipt(),
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(all(call.args[0] == "GET" for call in arm.call.call_args_list))
+        inspected = self.run_main(
+            "inspect-toolbox", [(200, server_response(), None), (200, connection, None)],
+            box_reads(), previous=records[-1],
+        )
+        self.assertEqual(inspected[0], 0)
+        self.assertFalse(inspected[1][-1]["mutation_attempted"])
+
+    def test_toolbox_rejects_missing_or_nonboolean_connection_sharing_before_writes(self):
+        for sharing in ({}, *({"isSharedToAll": value} for value in (None, "false", 0, 1))):
+            connection = connection_response()
+            connection["properties"].pop("isSharedToAll")
+            connection["properties"].update(sharing)
+            with self.subTest(sharing=sharing):
+                result = self.run_main(
+                    "create-toolbox", [(200, server_response(), None), (200, connection, None)], previous=receipt(),
+                )
+                self.assertEqual(result[0], 2)
+                result[3].call.assert_not_called()
+
     def test_toolbox_requires_fresh_terraform_handoff_before_authentication(self):
         result = self.run_main("create-toolbox", previous=receipt(), source=bootstrap(False))
         self.assertEqual((result[0], result[1]), (2, []))
@@ -428,7 +774,7 @@ class ToolchainTests(unittest.TestCase):
     def test_toolbox_rejects_connection_drift_or_credential_auth_without_writes(self):
         for key, value in (("target", "https://gateway.example.invalid/wrong"),
                            ("authType", "CustomKeys"), ("audience", "wrong"),
-                           ("credentials", {"key": GITHUB_TOKEN}), ("isSharedToAll", False)):
+                           ("credentials", {"key": GITHUB_TOKEN}), ("error", "synthetic connection failure")):
             connection = connection_response()
             connection["properties"][key] = value
             with self.subTest(key=key):

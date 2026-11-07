@@ -6,7 +6,11 @@ output "project_endpoint" { value = "https://${var.name}.services.ai.azure.com/a
 output "container_registry_id" { value = azapi_resource.registry.id }
 output "container_registry_endpoint" { value = azapi_resource.registry.output.properties.loginServer }
 output "registry_connection_name" { value = azapi_resource.registry_connection.name }
-output "registry_connection_shared" { value = azapi_resource.registry_connection.body.properties.isSharedToAll }
+output "registry_connection_id" { value = azapi_resource.registry_connection.id }
+output "registry_connection_shared" {
+  description = "Configured sharing request, not independent Azure readback or proof of image-pull access."
+  value       = azapi_resource.registry_connection.body.properties.isSharedToAll
+}
 output "storage_account_name" { value = azapi_resource.storage.name }
 output "storage_account_id" { value = azapi_resource.storage.id }
 output "application_insights_id" { value = azapi_resource.insights.id }

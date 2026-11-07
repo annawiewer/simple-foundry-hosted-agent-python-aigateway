@@ -2,12 +2,16 @@
 
 A self-contained, fresh-deployment Terraform alternative for the standalone
 AI Gateway and Foundry support infrastructure. Existing Bicep, application and
-`azure.yaml` defaults are unchanged.
+`azure.yaml` defaults are unchanged. The gateway resource family is
+`Microsoft.ApiManagement/aigateways`, not classic API Management
+`Microsoft.ApiManagement/service`.
 
-**Full hosted-agent/azd parity is not yet accepted.** The public gateway API is
-`2025-09-01-preview`, aligned with the upstream Bicep path. Earlier live checks
-used a separate 2026 deployment and do not qualify this pin change. See the
-single [acceptance matrix and remaining gates](docs/evidence-map.md#acceptance-matrix).
+**The end-to-end on-demand hosted digest was verified on November 7, 2026:**
+Terraform infrastructure, hosted agent, AI Gateway/model, all three real GitHub
+tools and correlated agent/gateway telemetry. The gateway API is
+`2025-09-01-preview`, aligned with the upstream Bicep path. This is one accepted
+runtime path, not certification of every build, credential or lifecycle scenario.
+See the [acceptance matrix and precise boundaries](docs/evidence-map.md#acceptance-matrix).
 
 ## Start here
 
@@ -39,6 +43,17 @@ their minimal defaults. Existing users should review the
 [default changes and explicit opt-outs](docs/architecture.md#optional-application-integration)
 before planning an upgrade.
 
+Registry sharing remains the Bicep-matching default request, not a requirement
+for project-local application access. See the [explicit compatibility choice](docs/architecture.md#project-local-registry-compatibility)
+when Azure returns the owned connection unshared.
+
+After deploying the agent, its actual identity can differ from both Foundry
+support identities. The opt-in `hosted_agent_principals` map supplies that
+independently verified principal for gateway Models User and agent-Insights
+publisher grants. Its empty default changes no resources. Follow the
+[postdeployment identity handoff](docs/application-flow.md#3-bind-the-deployed-agent-identity);
+do not duplicate or silently adopt existing operational assignments.
+
 ## Model content safety
 
 The application root's **bundled model profile now selects `Medium`** for Hate,
@@ -55,8 +70,9 @@ map with null severities. Keep deployment keys compatible with `model_aliases`.
 
 This is a gateway model policy, not MCP protection or a change to the separate
 `Microsoft.DefaultV2` backend filter. Review the policy-body changes in a fresh
-plan before upgrading. Offline contracts do not prove selected-API write
-acceptance or safety enforcement; see the [acceptance matrix](docs/evidence-map.md).
+plan before upgrading. A disposable selected-2025-API probe returned all four
+Medium severities; neither that readback nor the offline contracts prove safety
+enforcement. See the [acceptance matrix](docs/evidence-map.md).
 
 ## Application and telemetry boundaries
 
@@ -64,7 +80,9 @@ A tool role does not create a ToolServer, deliver a credential or establish
 working invocation. The RemoteTool still requires an explicit verified endpoint.
 The opt-in [GitHub tool runner](docs/toolchain.md) provides the separate
 credential-explicit ToolServer/Toolbox lifecycle and nonsecret connection
-handoffs. It is not called by Terraform or azd and has not been live-qualified.
+handoffs. It is not called by Terraform or azd. Real tool invocation and a
+bounded synthetic-header control-plane lifecycle were verified separately;
+credential rotation and general secret-handling guarantees remain unqualified.
 Foundry monitoring is separate from gateway OpenTelemetry. Gateway-bearing roots
 now default to the [two-stage native telemetry path](docs/native-telemetry.md):
 managed ingestion first, then a GET-only readiness handoff and a fresh plan for
@@ -75,12 +93,13 @@ environment adapter and [GET-only live qualification runner](docs/live-readback.
 remain separate from application deployment.
 
 See [ownership, state and API differences](docs/architecture.md) and the
-[validation and acceptance guide](docs/evidence-map.md). Live tool/credential
-acceptance and hosted application/routine qualification remain subsequent work.
+[validation and acceptance guide](docs/evidence-map.md). Recurring execution,
+credential lifecycle guarantees and full teardown remain separate qualifications;
+no schedule was enabled by the accepted on-demand run.
 The [application helper](docs/application-flow.md) now provides offline preparation
 and separately confirmed app-only azd deployment; it neither replaces Terraform
 nor installs tools, grants roles or reuses Bicep hooks. The
 [tool contract boundary](docs/tool-credential-boundary.md) explains why existing
 credential hooks are not reused. Telemetry
-configuration alone is not delivery proof; the evidence map distinguishes the
-verified gateway requests from untested hosted-agent tracing.
+configuration alone is not delivery proof; the evidence map records the
+independently correlated hosted-agent, model and GitHub request traces.

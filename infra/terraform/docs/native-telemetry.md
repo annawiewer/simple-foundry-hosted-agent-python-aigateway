@@ -14,8 +14,10 @@ separate readiness helper performs GETs, not resource or role changes.
 `legacy`. **Configured is not delivery proof.** Native export uses returned
 metrics/logs/traces endpoints, managed identity with the Monitor audience,
 and `payloadCapture = false`; it does not use a connection string.
-The [acceptance matrix](evidence-map.md#acceptance-matrix) records the remaining
-deployment, dashboard and tracing gates.
+The [acceptance matrix](evidence-map.md#acceptance-matrix) records separate
+delivery evidence: the November 7, 2026 on-demand hosted run correlated native
+gateway, agent, model and GitHub backend spans. That does not qualify every
+signal, target, Portal dashboard or exporter migration.
 
 ## Prerequisites
 
@@ -117,8 +119,11 @@ Keep loading the handoff for **every subsequent plan/apply**. Removing it
 would select the pending configuration and plan exporter removal, blocked by
 `prevent_destroy`. If readiness changes, rerun the helper into a new file and
 review another fresh plan; do not edit or fabricate service-generated values.
-Role propagation, telemetry delivery, the Portal dashboard and agent tracing
-still need separate runtime checks.
+Each deployment still needs separate runtime checks for role propagation and
+delivery; a configured output is insufficient. The actual hosted agent may also
+need its own publisher grant at agent Insights scope, distinct from this
+gateway-to-DCR grant. Follow the
+[postdeployment identity handoff](application-flow.md#3-bind-the-deployed-agent-identity).
 
 ## Legacy compatibility
 

@@ -6,6 +6,7 @@ CLI completion is not independent readback or runtime acceptance.
 """
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -14,7 +15,9 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
+from urllib.parse import quote
 
 import configure_tools as tools
 from export_environment import environment_mapping
@@ -55,6 +58,32 @@ OS_ENVIRONMENT = {
 SAFE_VALUE = r"[A-Za-z0-9_./:=?()-]+"
 SAVED_VALUE = r"[A-Za-z0-9_./:=?()@&+,%~-]+"
 SHA256 = r"[0-9a-f]{64}"
+DIAGNOSTIC_BYTES = 16 * 1024
+DIAGNOSTIC_LIMIT = 1024
+DIAGNOSTIC_PATTERNS = (
+    (r"unsupported (?:nested )?config(?:uration)?(?: block)?", "unsupported service configuration"),
+    (r"agent name could not be resolved", "agent metadata missing from environment"),
+    (r"(?:missing|required|unset|not set).{0,80}(?:environment variable|project id|subscription)"
+     r"|(?:environment variable|project id|subscription).{0,80}(?:missing|required|unset|not set)",
+     "required environment configuration missing"),
+    (r"\b(?:DefaultAzureCredential|CredentialUnavailable|AuthenticationFailed|Unauthorized)\b"
+     r"|authentication failed|invalid credentials|failed to (?:get|acquire).{0,40}token", "authentication failed"),
+    (r"\b(?:AuthorizationFailed|AccessDenied|Forbidden)\b|authorization failed|access denied|permission denied",
+     "authorization denied"),
+    (r"\b(?:ResourceNotFound|DeploymentNotFound|NotFound)\b|resource.{0,60}not found", "resource not found"),
+    (r"\b(?:InvalidArgument|InvalidRequest|BadRequest)\b|bad request", "request rejected as invalid"),
+    (r"\b(?:QuotaExceeded|InsufficientQuota|TooManyRequests)\b|quota exceeded|insufficient capacity",
+     "quota, capacity or throttling failure"),
+    (r"\b(?:ImagePullBackOff|ErrImagePull|ManifestUnknown)\b|(?:failed|unable) to pull.{0,40}image"
+     r"|manifest unknown", "container image retrieval failed"),
+    (r"registry connection.{0,80}(?:missing|not found|invalid)|invalid.{0,40}registry connection",
+     "registry connection invalid or missing"),
+    (r"(?:failed|error|unable).{0,40}(?:creat|deploy).{0,40}agent", "agent creation or deployment failed"),
+    (r"\b(?:ServiceUnavailable|InternalServerError)\b", "remote service failure"),
+    (r"connection refused|no such host|name resolution|TLS handshake|certificate verify|x509:",
+     "network, DNS or TLS failure"),
+    (r"deadline exceeded|timed out|timeout", "operation timed out"),
+)
 
 
 class FlowError(ValueError):
@@ -105,12 +134,21 @@ def guard(stage=None):
     }
 
 
-def manifest(agent, repository):
+def validate_prebuilt_image(image, registry):
+    component = r"[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*"
+    require(isinstance(image, str) and len(image) <= 512
+            and re.fullmatch(
+                rf"(?i:{re.escape(registry)})/{component}(?:/{component})*@sha256:{SHA256}", image,
+            ) is not None,
+            "Use a digest-pinned image from the contract's exact registry; image values withheld.")
+
+
+def manifest(agent, repository, prebuilt_image=None, registry_connection_name=None, use_default_acr=False):
     runtime = (
         "AZURE_AI_GATEWAY_ENDPOINT", "AZURE_AI_GATEWAY_MODEL", "AZURE_AI_GATEWAY_MINI_MODEL",
         "TOOLBOX_ENDPOINT", "TOOLBOX_NAME", "GITHUB_REPOSITORY",
     )
-    return {
+    result = {
         "name": "terraform-repo-digest",
         "requiredVersions": {
             "azd": ">=1.37.0 <1.38.0",
@@ -121,7 +159,7 @@ def manifest(agent, repository):
             agent: {
                 "name": agent, "project": "app", "host": "azure.ai.agent", "language": "docker",
                 "condition": "${" + AGENT_GATE + "}", "docker": {"remoteBuild": True},
-                "kind": "hosted", "config": {"startupCommand": "uv run --frozen --no-dev python main.py"},
+                "kind": "hosted", "startupCommand": "uv run --frozen --no-dev python main.py",
                 "container": {"resources": {"cpu": "0.5", "memory": "1Gi"}},
                 "protocols": [{"protocol": "responses", "version": "2.0.0"}],
                 "env": {**{key: "${" + key + "}" for key in runtime},
@@ -143,6 +181,14 @@ def manifest(agent, repository):
             },
         },
     }
+    if prebuilt_image is not None:
+        result["services"][agent].update({
+            "image": prebuilt_image,
+            "docker": {"imagePassthrough": True},
+        })
+        if not use_default_acr:
+            result["services"][agent]["registryConnectionId"] = registry_connection_name
+    return result
 
 
 def validate_values(values, bootstrap, box, subscription, tenant):
@@ -217,11 +263,18 @@ def prepare(args):
     box = receipt["toolbox"]
     integration = contract["integration"]
     require(integration["gateway_tool_access_enabled"] is True
-            and integration["registry_connection_shared"] is True
+            and type(integration["registry_connection_shared"]) is bool
             and integration["remote_tool_connection_id"] == bootstrap["remote_tool_connection_id"]
             and integration["remote_tool_endpoint"] == bootstrap["remote_tool_endpoint"]
             and type(integration["gateway_model_access_enabled"]) is bool,
             "Apply the Terraform tool/registry connections and export matching fresh handoffs first.")
+    registry_connection_id = contract["agents"].get("registry_connection_id")
+    expected_registry_connection_id = (
+        values["AZURE_AI_PROJECT_ID"] + "/connections/" + values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]
+    )
+    require(isinstance(registry_connection_id, str)
+            and registry_connection_id.casefold() == expected_registry_connection_id.casefold(),
+            "Export a fresh Terraform contract with the registry connection ID matching this project and connection name.")
     require(contract["gateway"]["monitoring"]["configuration_status"] in {"configured", "legacy"},
             "Complete the staged telemetry handoff before preparing the application.")
     require(re.fullmatch(r"[a-z][a-z0-9-]{2,49}", args.agent_name) is not None,
@@ -234,6 +287,10 @@ def prepare(args):
         "GITHUB_REPOSITORY": args.repository,
     })
     validate_values(values, bootstrap, box, args.subscription_id, args.tenant_id)
+    require(not args.use_default_acr or args.prebuilt_image is not None,
+            "Default ACR handling requires an explicitly selected prebuilt image.")
+    if args.prebuilt_image is not None:
+        validate_prebuilt_image(args.prebuilt_image, values["AZURE_CONTAINER_REGISTRY_ENDPOINT"])
     require(not linked(args.workspace), "Choose a new, unlinked application workspace.")
     workspace = args.workspace.resolve()
     require(not workspace.exists() and workspace.parent.is_dir()
@@ -245,37 +302,55 @@ def prepare(args):
     app.mkdir()
     for name, value in files.items():
         (app / name).write_bytes(value)
-    write_json(workspace / "azure.yaml", manifest(args.agent_name, args.repository))
+    write_json(workspace / "azure.yaml", manifest(
+        args.agent_name, args.repository, args.prebuilt_image, values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"],
+        args.use_default_acr,
+    ))
     directory = workspace / ".azure" / values["AZURE_ENV_NAME"]
     directory.mkdir(parents=True)
     write_json(workspace / ".azure" / "config.json", {"defaultEnvironment": values["AZURE_ENV_NAME"]})
     write_json(directory / "config.json", {})
     with (directory / ".env").open("x", encoding="utf-8", newline="\n") as stream:
         stream.writelines(f"{key}={json.dumps(value)}\n" for key, value in sorted(values.items()))
-    write_json(workspace / "prepared.json", {
+    spec = {
         "version": 1, "agent_name": args.agent_name, "environment": values,
         "bootstrap": bootstrap, "toolbox": box,
         "gateway_model_access_enabled": integration["gateway_model_access_enabled"],
         "files": fixed_hashes(workspace), "initial_azd_state": state_hashes(workspace, values),
-    })
+    }
+    if args.prebuilt_image is not None:
+        spec["prebuilt_image"] = args.prebuilt_image
+    if args.use_default_acr:
+        spec["use_default_acr"] = True
+    write_json(workspace / "prepared.json", spec)
 
 
 def load_prepared(args):
     require(not linked(args.workspace), "The application workspace must not be linked.")
     workspace = args.workspace.resolve()
     spec = json.loads(contents(workspace / "prepared.json", tools.MAX_BYTES))
-    require(isinstance(spec, dict) and set(spec) == {
+    required_keys = {
         "version", "agent_name", "environment", "bootstrap", "toolbox",
         "gateway_model_access_enabled", "files", "initial_azd_state",
-    } and type(spec["version"]) is int and spec["version"] == 1
+    }
+    require(isinstance(spec, dict) and set(spec) in (
+                required_keys, required_keys | {"prebuilt_image"},
+                required_keys | {"prebuilt_image", "use_default_acr"},
+            )
+            and ("use_default_acr" not in spec or spec["use_default_acr"] is True)
+            and type(spec["version"]) is int and spec["version"] == 1
             and re.fullmatch(r"[a-z][a-z0-9-]{2,49}", spec["agent_name"]) is not None
             and type(spec["gateway_model_access_enabled"]) is bool,
             "Invalid prepared project; contents withheld.")
     validate_values(spec["environment"], spec["bootstrap"], spec["toolbox"],
                     args.subscription_id, args.tenant_id)
+    if "prebuilt_image" in spec:
+        validate_prebuilt_image(spec["prebuilt_image"], spec["environment"]["AZURE_CONTAINER_REGISTRY_ENDPOINT"])
     require(fixed_hashes(workspace) == spec["files"]
             and json.loads(contents(workspace / "azure.yaml")) ==
-            manifest(spec["agent_name"], spec["environment"]["GITHUB_REPOSITORY"]),
+            manifest(spec["agent_name"], spec["environment"]["GITHUB_REPOSITORY"],
+                     spec.get("prebuilt_image"), spec["environment"]["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"],
+                     spec.get("use_default_acr", False)),
             "Prepared application or manifest changed; do not deploy this workspace.")
     require(set(spec["initial_azd_state"]) == {"project", "environment", "dotenv"}
             and all(isinstance(value, str) and re.fullmatch(SHA256, value)
@@ -299,9 +374,11 @@ def read_environment(workspace, spec):
         result[key] = value
     expected = spec["environment"]
     prefix = spec["agent_name"].replace("-", "_").upper()
+    hosted_outputs = {"ENABLE_HOSTED_AGENTS": "true", "ENABLE_CAPABILITY_HOST": "false"}
     require(all(result.get(key) == value for key, value in expected.items())
             and all(key in expected or key.startswith(("AGENT_" + prefix + "_", "SERVICE_" + prefix + "_"))
-                    for key in result),
+                    or key in hosted_outputs and value == hosted_outputs[key]
+                    for key, value in result.items()),
             "Saved context changed or contains unexpected values. Do not copy credentials into azd files.")
     return result
 
@@ -344,15 +421,91 @@ def child_environment():
     return result
 
 
-def invoke(executable, command, workspace, environment, deadline, capture=False):
-    result = subprocess.run(
-        [executable, *command], cwd=workspace, env=environment, stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE if capture else subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        text=True, encoding="utf-8", errors="replace", check=False,
-        timeout=tools.remaining(deadline, 30 if capture else 1800),
+@contextlib.contextmanager
+def diagnostic_pipe():
+    reader, writer = os.pipe()
+    data, complete = bytearray(), threading.Event()
+
+    def drain():
+        try:
+            while chunk := os.read(reader, 4096):
+                data.extend(chunk)
+                del data[:-DIAGNOSTIC_BYTES]
+            complete.set()
+        except OSError:
+            pass
+        finally:
+            os.close(reader)
+
+    worker = threading.Thread(target=drain, daemon=True)
+    try:
+        worker.start()
+    except BaseException:
+        os.close(reader)
+        os.close(writer)
+        raise
+    try:
+        yield writer, data, complete
+    finally:
+        os.close(writer)
+        # A surviving child must not extend the deployment deadline by holding a pipe.
+        worker.join(timeout=1)
+
+
+def failure_detail(data, environment):
+    text = bytes(data[-DIAGNOSTIC_BYTES:]).decode("utf-8", errors="replace")
+    secrets = {
+        value for name, value in environment.items()
+        if value and re.search(r"KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH|CONNECTION.?STRING|COOKIE|SAS", name, re.I)
+    }
+    for secret in sorted(secrets, key=len, reverse=True):
+        for value in (secret, json.dumps(secret)[1:-1], quote(secret, safe="")):
+            text = text.replace(value, "[redacted]")
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    text = re.sub(
+        r"(?im)^.*(?:authorization|proxy-authorization|api[-_]?key|access[-_]?token|refresh[-_]?token"
+        r"|client[-_]?secret|password|cookie|accountkey|sharedaccess(?:key|signature)"
+        r"|instrumentationkey|connection[-_]?string)\s*[\"']?\s*[:=].*$", "[redacted]", text,
     )
-    require(result.returncode == 0,
-            "azd did not complete successfully; output withheld. Preserve any receipt and review before retrying.")
+    text = re.sub(
+        r"(?i)\b(?:bearer|basic)\s+\S+|\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+"
+        r"|\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"
+        r"|\bsk-[A-Za-z0-9_-]+|https?://\S+", "[redacted]", text,
+    )
+    # Never release free-form text: even unrecognised or encoded credentials remain withheld.
+    statuses = re.findall(r"(?i)\b(?:HTTP(?:/\d(?:\.\d)?)?|(?:status|response)(?:[ _-]?code)?)"
+                          r"\s*[:=(]?\s*([45]\d\d)\b", text)
+    details = [f"HTTP {code}" for code in sorted(set(statuses))[:3]]
+    details.extend(message for pattern, message in DIAGNOSTIC_PATTERNS if re.search(pattern, text, re.I))
+    return "; ".join(details[:6]) or "unrecognized diagnostic; details withheld"
+
+
+def invoke(executable, command, workspace, environment, deadline, capture=False):
+    timeout = tools.remaining(deadline, 30 if capture else 1800)
+    stdout_context = contextlib.nullcontext((subprocess.PIPE, None, None)) if capture else diagnostic_pipe()
+    timed_out = False
+    with stdout_context as stdout, diagnostic_pipe() as stderr:
+        try:
+            result = subprocess.run(
+                [executable, *command], cwd=workspace, env=environment, stdin=subprocess.DEVNULL,
+                stdout=stdout[0], stderr=stderr[0],
+                text=True, encoding="utf-8", errors="replace", check=False, timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            timed_out = True
+    if timed_out or result.returncode != 0:
+        reason = "timed out" if timed_out else f"exited with code {result.returncode}"
+        if capture:
+            detail = "Inspection output withheld."
+        else:
+            detail = " ".join(
+                f"{name}: {failure_detail(stream[1], environment) if stream[2].is_set() else 'incomplete capture; details withheld'}."
+                for name, stream in (("stdout", stdout), ("stderr", stderr))
+            )
+        raise FlowError(
+            (f"azd {reason}. {detail}")[:DIAGNOSTIC_LIMIT]
+            + " Preserve any receipt and review before retrying."
+        ) from None
     if capture:
         require(isinstance(result.stdout, str) and len(result.stdout) <= tools.MAX_BYTES,
                 "Unexpected azd inspection output; contents withheld.")
@@ -477,6 +630,14 @@ def arguments(argv):
             command.add_argument("--tool-receipt", type=Path, required=True)
             command.add_argument("--repository", required=True)
             command.add_argument("--agent-name", required=True)
+            command.add_argument(
+                "--prebuilt-image",
+                help="Use an existing image pinned by sha256 in the contract's registry instead of building.",
+            )
+            command.add_argument(
+                "--use-default-acr", action="store_true",
+                help="Omit the optional registry connection for a prebuilt ACR image; does not grant pull access.",
+            )
             command.add_argument("--model-alias-key", default="primary-router")
             command.add_argument("--mini-model-alias-key", default="mini-router")
         else:

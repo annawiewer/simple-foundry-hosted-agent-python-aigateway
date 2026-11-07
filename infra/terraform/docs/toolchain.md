@@ -5,12 +5,18 @@ tool service to the Terraform-created Foundry project. It is separate from
 Terraform and azd so GitHub credentials never enter Terraform arguments, state
 or plans. The original Bicep application path is unchanged.
 
-**This is source-tested automation, not live acceptance.** Creating a ToolServer
-uploads the explicitly selected credential to Azure; creating a Toolbox writes
-to Foundry. Review and authorize the actual target and credential separately.
-Do not run these commands against the earlier protected deployment or reuse
-saved plans. The [acceptance matrix](evidence-map.md) distinguishes offline
-coverage from provisioning, credential handling and real tool invocation.
+**The November 7, 2026 hosted digest exercised all three real GitHub tools.**
+An isolated ToolServer create/update/read/delete check also used public Learn
+MCP and synthetic nonsecret headers, not GitHub credentials. It verified
+nonsecret configuration, endpoint stability and ordinary-GET header omission,
+not real credential rotation or the production runner's full lifecycle.
+The [acceptance matrix](evidence-map.md) separates these results and their limits.
+
+Creating a ToolServer uploads the explicitly selected
+credential to Azure; creating a Toolbox writes to Foundry. Review and authorize
+the actual target and credential separately.
+These examples do not authorize changes to an existing deployment or reuse of
+saved plans. Omitted header values do not prove what was stored or delivered.
 
 ## Owners and limits
 
@@ -28,19 +34,29 @@ or tool invocation. It does not install dependencies, change CLI context,
 register providers, delete resources, adopt existing resources or migrate state.
 
 **Exclusive ownership is a prerequisite, not a service lock.** The selected
-2025 ToolServer API does not enforce `If-None-Match` on creation. A preceding
-GET cannot prevent another writer racing the PUT. Toolbox creation is also a
-GET followed by a non-idempotent version POST. The operator must exclude
-competing Bicep, Terraform, hook and manual writers before confirming ownership.
-Existing names are rejected, even if they look compatible. Credential rotation
-uses the fresh specific ETag and rejects drift; live ETag enforcement still
-requires qualification.
+2025 ToolServer path must not rely on `If-None-Match` for atomic creation; see
+the [pinned CLI warning and its limits](tool-credential-boundary.md#selected-2025-contract).
+A preceding GET cannot prevent another writer racing the PUT. Toolbox creation
+is also a GET followed by a non-idempotent version POST. The operator must
+exclude competing Bicep, Terraform, hook and manual writers before confirming
+ownership. Existing names are rejected, even if they look compatible.
+Credential rotation uses the fresh specific ETag and rejects drift; live ETag
+enforcement still requires qualification.
 
 Every invocation requires a new append-only `.jsonl` receipt in an existing
 private directory. A durable intent is written before a mutation. Keep the
 latest receipt, including failures: it binds the owner, configuration, target,
 ETag and known Toolbox version. Receipts are not secrets or Terraform state,
 but contain deployment metadata and should remain outside Git.
+
+New ToolServer creation uses **version-2 receipts** and a versioned request
+hash. Version-1 receipts still validate against their original request body
+and hash, including existing Toolbox metadata. Inspection preserves that
+version; it never upgrades or rewrites historical records. Version-1 receipts
+cannot authorize credential rotation or Toolbox creation. A changed
+configuration needs separate review; there is no automatic migration writer.
+The explicit compatibility-repair command below is a separately authorized
+transition, not a way to use v1 receipts for ordinary writes.
 
 ## Before running
 
@@ -60,7 +76,9 @@ permissions audit**. Neither a token prefix nor `X-MCP-Readonly` proves least
 privilege. The configured tools are `list_pull_requests`, `list_issues` and
 `actions_list`; the credential must restrict which repositories they can read.
 
-The runner sets Medium gateway tool content safety. Optional
+The runner requests endpoint `required=true` so an endpoint failure fails the
+federation, plus Medium gateway tool content safety with `scope=resource`.
+This is not proof of runtime policy enforcement. Optional
 `--allow-client-cidr` arguments select an MCP-only IP allow list; repeat the flag
 for multiple IPv4/IPv6 ranges. Omitting it allows all caller IPs at that policy
 layer. The model-only Terraform `model_allowed_client_cidrs` input is deliberately
@@ -108,20 +126,69 @@ if ($LASTEXITCODE -ne 0) { throw 'Stop and inspect the retained receipt.' }
 
 This performs one PUT only after the precise missing-ToolServer response. It
 then uses bounded GETs to check the owner and complete nonsecret configuration.
-It requires credential headers to be absent/empty on ordinary GET. Returned
-header values, including masked values, stop the flow for separate qualification.
+It accepts absent/empty credential headers and null placeholders for only
+`Authorization`, `X-MCP-Readonly` and `X-MCP-Tools`. Unknown header names or any
+non-null values, including masks and empty arrays, stop the flow. Null
+placeholders are not classified as exposed secrets, but do not prove the
+stored credential or restriction-header values.
 The full PUT response is not projected, and raw HTTP/CLI errors are not logged.
 
-Only the service-returned `properties.mcpEndpointUrl`, on the declared gateway
-origin, is exported as `gateway_remote_tool_endpoint`. Its path and case are
-preserved; the runner does not invent a route. No handoff is emitted on failed
-readback. `configured` means matching nonsecret readback, not a working MCP call,
+The runner exports the service-returned URL from one unambiguous
+`properties.gatewayEndpoints` entry with `api=mcp`, or the legacy
+`properties.mcpEndpointUrl`. If both are returned, they must agree. URLs must
+remain on the declared gateway origin; optional base-URL metadata must be
+credential-free, on that origin, and consistent with the invocation path.
+Path and case are preserved; no route is invented.
+
+Version-2 readback requires the boolean `required=true` and resource-scoped
+policies. Explicit fail-open behavior, missing safety evidence, unknown
+configuration fields or policy drift block the handoff. Read-only version-1
+inspection also recognizes its original explicit `failureMode=failClosed`
+when `required` is absent, but never accepts an explicit `required=false`.
+`configured` means matching nonsecret readback, not a working MCP call,
 effective credential permissions or clean cloud diagnostic logs.
+
+### Explicit repair of an unconfirmed legacy creation
+
+Use this only after separately reviewing and authorizing an existing-resource
+update and credential re-submission. It requires the original version-1
+`create-toolserver` receipt with an attempted mutation and pending/unconfirmed
+status, plus explicit `--confirm-receipt-upgrade`. A new or configured receipt,
+an already-repaired receipt, or a legacy Toolbox is not eligible.
+
+```powershell
+$RepairedReceipt = Join-Path $Private 'toolserver.repaired.jsonl'
+$RepairedToolVariables = Join-Path $Private 'tools.repaired.tfvars.json'
+
+python -B $Runner repair-toolserver `
+  --bootstrap $Bootstrap --subscription-id $Subscription --tenant-id $Tenant `
+  --previous-receipt $ServerReceipt --confirm-receipt-upgrade `
+  --credential-env SELECTED_GITHUB_MCP_TOKEN `
+  --confirm-read-only-credential --confirm-exclusive-owner `
+  --receipt $RepairedReceipt --tfvars $RepairedToolVariables
+if ($LASTEXITCODE -ne 0) { throw 'Stop and inspect the retained repair receipt.' }
+$ServerReceipt = $RepairedReceipt
+$ToolVariables = $RepairedToolVariables
+```
+
+The fresh GET must differ from the version-2 contract only by the exact boolean
+`required=false`. Identity, owner, policy scope, headers and returned URLs still
+have to pass their checks. The runner sends one complete version-2 PUT with the
+fresh ETag, retained endpoint ID and explicitly selected credential. It does not
+assume omitted/null headers preserve secrets and does not retrieve stored ones.
+The endpoint ID and invocation URL must remain unchanged in actual readback.
+
+The new version-2 journal carries `upgraded_from_sha256`, calculated over the
+exact legacy receipt bytes. Historical bytes/hashes are never rewritten, and
+subsequent inspection/Toolbox receipts retain this provenance. A failed or
+uncertain repair is not retried; keep its new receipt and inspect. A matching
+management readback still does not prove runtime credential or policy behavior.
 
 ## 3. Let Terraform create its connection
 
 Review a fresh plan using **all original inputs** plus the new explicit
-`tools.ready.tfvars.json`. Retain any existing native-telemetry handoff and other
+`$ToolVariables` file (`tools.ready.tfvars.json` after creation, or
+`tools.repaired.tfvars.json` after confirmed repair). Retain any existing native-telemetry handoff and other
 overrides. Do not let an omitted input undo earlier integration or monitoring.
 The planned change should be the existing root-owned RemoteTool connection and
 any other deliberately reviewed changes, not a second ToolServer owner.
@@ -152,6 +219,14 @@ version, ownership metadata and single MCP tool entry. It uses the same
 connection reference and `require_approval: never` entry as the shared
 [`toolbox.yaml`](../../../toolbox.yaml); that setting relies on your separately
 reviewed read-only credential and tool restriction.
+
+For this single-project managed-identity flow, `isSharedToAll` must be an
+explicit boolean; both true and false are accepted without changing sharing.
+Missing/nonboolean values or a reported connection error block the Toolbox
+request. Record any discrepancy between requested and returned sharing rather
+than treating false as true or claiming general service semantics.
+All project identity, authentication, audience, target and credential checks
+remain in force; runtime authorization still requires a real invocation.
 
 The Toolbox endpoint follows the canonical Foundry versioned route using the
 validated project, name and service-returned version. This is different from the

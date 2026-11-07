@@ -26,6 +26,7 @@ with mock.patch.object(sys, "path", [str(SCRIPTS), *sys.path]):
 KEY = "synthetic-gateway-runtime-key"
 GITHUB_KEY = "synthetic-unselected-github-key"
 AGENT = "fixture-digest"
+IMAGE = "registry.azurecr.io/team/digest@sha256:" + "a" * 64
 HOST_SHELL = shutil.which("pwsh" if os.name == "nt" else "sh")
 RUN_GUARD = subprocess.run
 
@@ -42,13 +43,17 @@ class ApplicationFlowTests(unittest.TestCase):
         self.receipt_path = self.root / "tool.receipt.jsonl"
         self.bootstrap = bootstrap(connected=True)
         self.contract = copy.deepcopy(CONTRACT)
+        self.contract["agents"]["registry_connection_id"] = (
+            self.contract["agents"]["project_id"] + "/connections/"
+            + self.contract["agents"]["registry_connection_name"]
+        )
         self.contract["gateway"].update(
             id=self.bootstrap["gateway_id"], endpoint=self.bootstrap["gateway_endpoint"],
             monitoring={"configuration_status": "configured"},
         )
         self.contract["integration"] = {
             "gateway_model_access_enabled": True, "gateway_tool_access_enabled": True,
-            "registry_connection_shared": True,
+            "registry_connection_shared": False,
             "remote_tool_connection_id": self.bootstrap["remote_tool_connection_id"],
             "remote_tool_endpoint": self.bootstrap["remote_tool_endpoint"],
         }
@@ -102,7 +107,7 @@ class ApplicationFlowTests(unittest.TestCase):
     def fake_cli(self, command, **kwargs):
         self.assertEqual(kwargs["cwd"], self.workspace.resolve())
         self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
-        self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+        self.assertGreaterEqual(kwargs["stderr"], 0)
         self.assertGreater(kwargs["timeout"], 0)
         environment = kwargs["env"]
         for name in ("SELECTED_GATEWAY_KEY", "GITHUB_TOKEN", "AZURE_CLIENT_SECRET",
@@ -119,7 +124,7 @@ class ApplicationFlowTests(unittest.TestCase):
             ]))
         self.assertEqual(command[1], "deploy")
         self.assertEqual(command[3:], ["--environment", "fixture", "--no-prompt"])
-        self.assertEqual(kwargs["stdout"], subprocess.DEVNULL)
+        self.assertGreaterEqual(kwargs["stdout"], 0)
         if command[2] == AGENT:
             self.assertEqual(environment[flow.AGENT_GATE], "true")
             self.assertEqual(environment[flow.SCHEDULE_GATE], "false")
@@ -132,6 +137,7 @@ class ApplicationFlowTests(unittest.TestCase):
                 "RESPONSES_ENDPOINT": self.bootstrap["project_endpoint"] + "/openai/responses?agent=name&api-version=v1",
             }
             with self.dotenv().open("a", encoding="utf-8") as stream:
+                stream.write("ENABLE_HOSTED_AGENTS=true\nENABLE_CAPABILITY_HOST=false\n")
                 stream.writelines(f"{prefix}{key}={value if key == 'VERSION' else json.dumps(value)}\n"
                                   for key, value in values.items())
                 stream.write('SERVICE_FIXTURE_DIGEST_IMAGE_NAME="registry.azurecr.io/digest@sha256:0123456789"\n')
@@ -169,6 +175,12 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertNotIn("infra", manifest)
         self.assertEqual(set(manifest["hooks"]), {"preprovision", "predown"})
         agent = manifest["services"][AGENT]
+        self.assertNotIn("config", agent)
+        self.assertEqual(agent["startupCommand"], "uv run --frozen --no-dev python main.py")
+        self.assertNotIn("prebuilt_image", spec)
+        self.assertEqual(agent["docker"], {"remoteBuild": True})
+        self.assertNotIn("image", agent)
+        self.assertNotIn("registryConnectionId", agent)
         self.assertNotIn("uses", agent)
         self.assertNotIn("environmentVariables", agent)
         self.assertEqual(agent["env"]["AZURE_AI_GATEWAY_API_KEY"], "${" + flow.KEY_VARIABLE + "}")
@@ -178,11 +190,254 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertIn("example/repository", routine["action"]["input"])
         self.assertEqual(set(routine["triggers"]["default"]), {"type", "cronExpression", "timeZone"})
 
+    def test_prebuilt_image_prepares_pinned_passthrough_without_changing_shared_files(self):
+        self.contract["agents"]["registry_connection_id"] = (
+            self.contract["agents"]["registry_connection_id"].upper()
+        )
+        self.assertEqual(self.prepare(["--prebuilt-image", IMAGE])[0], 0)
+        self.process.assert_not_called()
+        spec = self.spec()
+        self.assertEqual(spec["prebuilt_image"], IMAGE)
+        manifest = json.loads((self.workspace / "azure.yaml").read_text())
+        agent = manifest["services"][AGENT]
+        self.assertNotIn("config", agent)
+        self.assertEqual(agent["startupCommand"], "uv run --frozen --no-dev python main.py")
+        self.assertEqual(agent["image"], IMAGE)
+        self.assertEqual(agent["docker"], {"imagePassthrough": True})
+        self.assertEqual(agent["registryConnectionId"],
+                         spec["environment"]["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"])
+        self.assertEqual(spec["environment"]["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"], "true")
+        self.assertEqual(spec["environment"]["USE_EXISTING_AI_PROJECT"], "true")
+        self.assertNotIn("image", manifest["services"][AGENT + "-daily"])
+        self.assertNotIn(IMAGE, self.dotenv().read_text())
+        self.assertEqual({path.name for path in (self.workspace / "app").iterdir()}, set(flow.APP_FILES))
+        for name in flow.APP_FILES:
+            self.assertEqual((self.workspace / "app" / name).read_bytes(), (flow.SOURCE / name).read_bytes())
+
+    def test_prebuilt_image_uses_declared_registry_host_not_inferred_arm_name(self):
+        self.contract["agents"]["registry_endpoint"] = "registry-a1b2c3d4.azurecr.io"
+        self.assertNotEqual(self.prepare(["--prebuilt-image", IMAGE])[0], 0)
+        self.assertFalse(self.workspace.exists())
+        image = IMAGE.replace("registry.azurecr.io", "registry-a1b2c3d4.azurecr.io")
+        self.assertEqual(self.prepare(["--prebuilt-image", image])[0], 0)
+        self.process.assert_not_called()
+
+    def test_default_acr_omits_only_the_registry_reference_and_deploys_once(self):
+        self.assertEqual(self.prepare(["--prebuilt-image", IMAGE, "--use-default-acr"])[0], 0)
+        self.process.assert_not_called()
+        spec = self.spec()
+        self.assertIs(spec["use_default_acr"], True)
+        expected = flow.manifest(AGENT, "example/repository", IMAGE,
+                                 spec["environment"]["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"])
+        del expected["services"][AGENT]["registryConnectionId"]
+        self.assertEqual(json.loads((self.workspace / "azure.yaml").read_text()), expected)
+        self.assertEqual(self.launch_agent()[0], 0)
+        self.assertEqual(self.records()[-1]["prepared_sha256"], flow.fingerprint(spec))
+        self.assertNotEqual(self.launch_agent()[0], 0)
+        self.assertEqual(self.process.call_count, 3)
+        self.assertFalse((self.workspace / "schedule.receipt.jsonl").exists())
+
+    def test_default_acr_requires_a_prebuilt_image_before_side_effects(self):
+        self.assertNotEqual(self.prepare(["--use-default-acr"])[0], 0)
+        self.assertFalse(self.workspace.exists())
+        self.process.assert_not_called()
+
+    def test_default_acr_preserves_registry_ownership_and_image_checks(self):
+        original = self.contract["agents"]["registry_connection_id"]
+        for connection in (None, original + "-other", original.replace("/projects/", "/other/")):
+            with self.subTest(connection=connection):
+                self.contract["agents"]["registry_connection_id"] = connection
+                self.assertNotEqual(self.prepare(["--prebuilt-image", IMAGE, "--use-default-acr"])[0], 0)
+                self.assertFalse(self.workspace.exists())
+        self.contract["agents"]["registry_connection_id"] = original
+        image = IMAGE.replace("registry.azurecr.io", "other.azurecr.io")
+        self.assertNotEqual(self.prepare(["--prebuilt-image", image, "--use-default-acr"])[0], 0)
+        self.assertFalse(self.workspace.exists())
+        self.process.assert_not_called()
+
+    def test_default_acr_rejects_saved_mode_drift_before_cli(self):
+        self.assertEqual(self.prepare(["--prebuilt-image", IMAGE, "--use-default-acr"])[0], 0)
+        spec_path = self.workspace / "prepared.json"
+        original = self.spec()
+        for value in (None, False, 1, "true", "default"):
+            with self.subTest(value=value):
+                spec = copy.deepcopy(original)
+                spec["use_default_acr"] = value
+                spec_path.write_text(json.dumps(spec), encoding="utf-8")
+                self.assertNotEqual(self.launch_agent()[0], 0)
+        for field in ("prebuilt_image", "use_default_acr"):
+            spec = copy.deepcopy(original)
+            del spec[field]
+            spec_path.write_text(json.dumps(spec), encoding="utf-8")
+            self.assertNotEqual(self.launch_agent()[0], 0)
+        self.process.assert_not_called()
+        self.assertFalse((self.workspace / "agent.receipt.jsonl").exists())
+
+    def test_default_acr_rejects_reintroduced_reference_even_with_updated_file_hash(self):
+        self.assertEqual(self.prepare(["--prebuilt-image", IMAGE, "--use-default-acr"])[0], 0)
+        manifest_path = self.workspace / "azure.yaml"
+        document = json.loads(manifest_path.read_text())
+        document["services"][AGENT]["registryConnectionId"] = (
+            self.contract["agents"]["registry_connection_name"]
+        )
+        manifest_path.write_text(json.dumps(document), encoding="utf-8")
+        spec = self.spec()
+        spec["files"] = flow.fixed_hashes(self.workspace)
+        (self.workspace / "prepared.json").write_text(json.dumps(spec), encoding="utf-8")
+        self.assertNotEqual(self.launch_agent()[0], 0)
+        self.process.assert_not_called()
+        self.assertFalse((self.workspace / "agent.receipt.jsonl").exists())
+
+    def test_prebuilt_registry_arm_id_is_rejected_even_with_updated_file_hash(self):
+        self.assertEqual(self.prepare(["--prebuilt-image", IMAGE])[0], 0)
+        manifest_path = self.workspace / "azure.yaml"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["services"][AGENT]["registryConnectionId"] = self.contract["agents"]["registry_connection_id"]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        spec = self.spec()
+        spec["files"] = flow.fixed_hashes(self.workspace)
+        (self.workspace / "prepared.json").write_text(json.dumps(spec), encoding="utf-8")
+        self.assertNotEqual(self.launch_agent()[0], 0)
+        self.process.assert_not_called()
+        self.assertFalse((self.workspace / "agent.receipt.jsonl").exists())
+
+    def test_prebuilt_image_rejects_unsafe_foreign_and_mutable_references_before_side_effects(self):
+        for image in (
+            "", "registry.azurecr.io/team/digest:latest",
+            IMAGE.replace("registry.azurecr.io", "other.azurecr.io"),
+            IMAGE.replace("registry.azurecr.io", "registry.azurecr.io.evil.invalid"),
+            IMAGE.replace("registry.azurecr.io", "registry.azurecr.io:443"),
+            "https://" + IMAGE, "//" + IMAGE, KEY + "@" + IMAGE,
+            IMAGE.replace("/team/", "//team/"), IMAGE.replace("/team/", "/../"),
+            IMAGE.replace("/team/", "/Team/"), IMAGE.replace("/team/", "/%74eam/"),
+            IMAGE.replace("@sha256:", ":latest@sha256:"),
+            IMAGE.replace("@sha256:", "@sha512:"), IMAGE[:-1], IMAGE + "a",
+            IMAGE + "?key=" + KEY, IMAGE + "#fragment", " " + IMAGE, IMAGE + "\n",
+        ):
+            with self.subTest(image=image):
+                code, output = self.prepare(["--prebuilt-image", image])
+                self.assertNotEqual(code, 0)
+                if image:
+                    self.assertNotIn(image, output)
+                self.assertFalse(self.workspace.exists())
+        self.process.assert_not_called()
+
+    def test_prebuilt_image_deploy_preserves_key_isolation_and_single_agent_receipt(self):
+        self.assertEqual(self.prepare(["--prebuilt-image", IMAGE])[0], 0)
+        self.assertEqual(self.launch_agent(("--gateway-key-env", "SELECTED_GATEWAY_KEY"))[0], 0)
+        self.assertEqual(self.process.call_count, 3)
+        self.assertEqual(self.records()[-1]["prepared_sha256"], flow.fingerprint(self.spec()))
+        self.assertEqual(self.records()[-1]["authentication"], "api-key")
+        self.assertFalse((self.workspace / "schedule.receipt.jsonl").exists())
+        for path in self.workspace.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(KEY.encode(), path.read_bytes())
+        self.assertNotEqual(self.launch_agent()[0], 0)
+        self.assertEqual(self.process.call_count, 3)
+
+    def test_prebuilt_image_drift_and_invalid_saved_selection_stop_before_cli(self):
+        self.assertEqual(self.prepare(["--prebuilt-image", IMAGE])[0], 0)
+        spec_path = self.workspace / "prepared.json"
+        manifest_path = self.workspace / "azure.yaml"
+        spec_bytes, manifest_bytes = spec_path.read_bytes(), manifest_path.read_bytes()
+        for image in (None, False, "", IMAGE.replace("a" * 64, "b" * 64),
+                      IMAGE.replace("registry.azurecr.io", "other.azurecr.io")):
+            with self.subTest(image=image):
+                spec = json.loads(spec_bytes)
+                spec["prebuilt_image"] = image
+                spec_path.write_text(json.dumps(spec), encoding="utf-8")
+                self.assertNotEqual(self.launch_agent()[0], 0)
+        spec_path.write_bytes(spec_bytes)
+        manifest = json.loads(manifest_bytes)
+        manifest["services"][AGENT]["image"] = IMAGE.replace("a" * 64, "b" * 64)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        spec = json.loads(spec_bytes)
+        spec["files"] = flow.fixed_hashes(self.workspace)
+        spec_path.write_text(json.dumps(spec), encoding="utf-8")
+        self.assertNotEqual(self.launch_agent()[0], 0)
+        self.process.assert_not_called()
+        self.assertFalse((self.workspace / "agent.receipt.jsonl").exists())
+
+    def test_prebuilt_image_change_during_tooling_stops_before_deployment_intent(self):
+        self.assertEqual(self.prepare(["--prebuilt-image", IMAGE])[0], 0)
+        def fake(command, **kwargs):
+            result = self.fake_cli(command, **kwargs)
+            if command[1:3] == ["extension", "list"]:
+                spec = self.spec()
+                spec["prebuilt_image"] = IMAGE.replace("a" * 64, "b" * 64)
+                manifest_path = self.workspace / "azure.yaml"
+                manifest = json.loads(manifest_path.read_text())
+                manifest["services"][AGENT]["image"] = spec["prebuilt_image"]
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                spec["files"] = flow.fixed_hashes(self.workspace)
+                (self.workspace / "prepared.json").write_text(json.dumps(spec), encoding="utf-8")
+            return result
+        self.process.side_effect = fake
+        self.assertNotEqual(self.call("deploy-agent", ["--confirm-agent-deployment", "--managed-identity"])[0], 0)
+        self.assertEqual(self.process.call_count, 2)
+        self.assertFalse((self.workspace / "agent.receipt.jsonl").exists())
+
+    def test_prebuilt_image_cannot_be_selected_or_changed_at_deploy_or_schedule(self):
+        self.assertEqual(self.prepare(["--prebuilt-image", IMAGE])[0], 0)
+        for operation, extra in (
+            ("deploy-agent", ["--confirm-agent-deployment", "--managed-identity"]),
+            ("enable-schedule", ["--confirm-enable-schedule"]),
+        ):
+            self.assertNotEqual(self.call(operation, [*extra, "--prebuilt-image", IMAGE])[0], 0)
+        self.process.assert_not_called()
+
     def test_prepare_accepts_nonsensitive_contract_envelope(self):
         self.contract = {"deployment_contract": {"sensitive": False, "value": self.contract},
                          "unrelated_secret": {"sensitive": True, "value": KEY}}
         self.assertEqual(self.prepare()[0], 0)
         self.assertNotIn(KEY, (self.workspace / "prepared.json").read_text())
+
+    def test_prepare_preserves_a_legacy_toolbox_receipt(self):
+        legacy = receipt(connected=True, version=1)
+        legacy.update(operation="create-toolbox", toolbox=copy.deepcopy(self.receipt["toolbox"]))
+        self.receipt = legacy
+        self.assertEqual(self.prepare()[0], 0)
+        self.process.assert_not_called()
+        self.assertEqual(self.receipt_path.read_text(encoding="utf-8"), json.dumps(legacy) + "\n")
+
+    def test_prepare_accepts_toolbox_receipt_with_explicit_upgrade_provenance(self):
+        self.receipt["upgraded_from_sha256"] = "a" * 64
+        self.assertEqual(self.prepare()[0], 0)
+        self.process.assert_not_called()
+        self.assertEqual(json.loads(self.receipt_path.read_text()), self.receipt)
+
+    def test_prepare_accepts_shared_registry_and_case_insensitive_arm_id(self):
+        self.contract["integration"]["registry_connection_shared"] = True
+        self.contract["agents"]["registry_connection_id"] = (
+            self.contract["agents"]["registry_connection_id"].upper()
+        )
+        self.assertEqual(self.prepare()[0], 0)
+        self.process.assert_not_called()
+
+    def test_prepare_requires_owned_registry_connection_for_either_sharing_choice(self):
+        agents = self.contract["agents"]
+        connection_id = agents.pop("registry_connection_id")
+        self.assertNotEqual(self.prepare()[0], 0)
+        self.assertFalse(self.workspace.exists())
+        for shared in (False, True):
+            self.contract["integration"]["registry_connection_shared"] = shared
+            for value in (
+                None, True, 1, "",
+                connection_id.replace("/projects/project/", "/projects/other/"),
+                connection_id.replace("/projects/project", ""),
+                connection_id.replace("/resourceGroups/agents/", "/resourceGroups/other/"),
+                connection_id.replace(SUBSCRIPTION, TENANT),
+                connection_id + "-other",
+                connection_id + "/child",
+                connection_id + "?key=synthetic",
+            ):
+                with self.subTest(shared=shared, connection_id=value):
+                    agents["registry_connection_id"] = value
+                    code, output = self.prepare()
+                    self.assertNotEqual(code, 0)
+                    self.assertIn("registry connection ID", output)
+                    self.assertFalse(self.workspace.exists())
+        self.process.assert_not_called()
 
     @unittest.skipUnless(HOST_SHELL, "The host-native shell is not installed.")
     def test_generated_hooks_enforce_operation_and_infrastructure_boundaries(self):
@@ -227,7 +482,10 @@ class ApplicationFlowTests(unittest.TestCase):
             ("bootstrap", "project_endpoint", "https://other.services.ai.azure.com/api/projects/project"),
             ("bootstrap", "remote_tool_connection_id", None),
             ("integration", "remote_tool_endpoint", "https://gateway.example.invalid/other/mcp"),
-            ("integration", "registry_connection_shared", False),
+            ("integration", "registry_connection_shared", "false"),
+            ("integration", "registry_connection_shared", 0),
+            ("integration", "registry_connection_shared", 1),
+            ("integration", "registry_connection_shared", None),
             ("integration", "gateway_tool_access_enabled", False),
             ("configuration", "repository", "other/repository"),
         ):
@@ -305,6 +563,52 @@ class ApplicationFlowTests(unittest.TestCase):
         for path in self.workspace.rglob("*"):
             if path.is_file():
                 self.assertNotIn(KEY.encode(), path.read_bytes())
+
+    def test_unreviewed_hosted_outputs_leave_receipt_unconfirmed_without_retry(self):
+        cases = (
+            ("ENABLE_HOSTED_AGENTS", "false"),
+            ("ENABLE_HOSTED_AGENTS", "TRUE"),
+            ("ENABLE_CAPABILITY_HOST", "true"),
+            ("ENABLE_CAPABILITY_HOST", "0"),
+            ("ENABLE_OTHER_FEATURE", "true"),
+            ("AI_PROJECT_DEPLOYMENTS", "unreviewed"),
+        )
+        for index, (key, value) in enumerate(cases):
+            with self.subTest(key=key, value=value):
+                self.workspace = self.root / f"case-{index}"
+                self.assertEqual(self.prepare()[0], 0)
+                self.process.reset_mock()
+                def fake(command, **kwargs):
+                    result = self.fake_cli(command, **kwargs)
+                    if command[1] == "deploy":
+                        lines = [line for line in self.dotenv().read_text().splitlines()
+                                 if not line.startswith(key + "=")]
+                        self.dotenv().write_text(
+                            "\n".join([*lines, f"{key}={json.dumps(value)}"]) + "\n", encoding="utf-8")
+                    return result
+                self.process.side_effect = fake
+                args = ["--confirm-agent-deployment", "--managed-identity"]
+                self.assertNotEqual(self.call("deploy-agent", args)[0], 0)
+                self.assertEqual([record["status"] for record in self.records()], ["pending", "unconfirmed"])
+                self.assertNotEqual(self.call("deploy-agent", args)[0], 0)
+                self.assertNotEqual(self.call("enable-schedule", ["--confirm-enable-schedule"])[0], 0)
+                self.assertEqual(self.process.call_count, 3)
+                self.assertFalse((self.workspace / "schedule.receipt.jsonl").exists())
+
+    def test_reviewed_hosted_outputs_do_not_upgrade_an_unconfirmed_receipt(self):
+        self.assertEqual(self.prepare()[0], 0)
+        self.assertEqual(self.launch_agent()[0], 0)
+        records = self.records()
+        records[-1] = {key: value for key, value in records[-1].items() if key not in {"agent", "azd_state"}}
+        records[-1]["status"] = "unconfirmed"
+        path = self.workspace / "agent.receipt.jsonl"
+        path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+        before = path.read_bytes()
+        self.process.reset_mock()
+        self.assertNotEqual(self.call("enable-schedule", ["--confirm-enable-schedule"])[0], 0)
+        self.process.assert_not_called()
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse((self.workspace / "schedule.receipt.jsonl").exists())
 
     def test_rejects_missing_key_literal_and_tool_credential_selection(self):
         self.assertEqual(self.prepare()[0], 0)
@@ -439,26 +743,39 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertEqual(self.prepare()[0], 0)
         def fake(command, **kwargs):
             if command[1] == "deploy":
+                os.write(kwargs["stdout"], f"ERROR: unsupported nested config block {KEY}\n".encode())
+                os.write(kwargs["stderr"], GITHUB_KEY.encode())
                 return subprocess.CompletedProcess(command, 1, stdout=KEY, stderr=GITHUB_KEY)
             return self.fake_cli(command, **kwargs)
         self.process.side_effect = fake
         args = ["--confirm-agent-deployment", "--gateway-key-env", "SELECTED_GATEWAY_KEY"]
-        self.assertNotEqual(self.call("deploy-agent", args)[0], 0)
+        code, output = self.call("deploy-agent", args)
+        self.assertNotEqual(code, 0)
+        self.assertIn("stdout: unsupported service configuration", output)
         self.assertEqual([record["status"] for record in self.records()], ["pending", "unconfirmed"])
+        self.assertNotIn(KEY, (self.workspace / "agent.receipt.jsonl").read_text())
         self.assertEqual(self.process.call_count, 3)
         self.assertNotEqual(self.call("deploy-agent", args)[0], 0)
         self.assertNotEqual(self.call("enable-schedule", ["--confirm-enable-schedule"])[0], 0)
         self.assertEqual(self.process.call_count, 3)
 
-    def test_timeout_output_is_withheld_and_receipt_stays_unconfirmed(self):
+    def test_timeout_diagnoses_both_streams_and_receipt_stays_unconfirmed(self):
         self.assertEqual(self.prepare()[0], 0)
         def fake(command, **kwargs):
             if command[1] == "deploy":
+                os.write(kwargs["stdout"], f"ERROR: failed to create agent version {KEY}\n".encode())
+                os.write(kwargs["stderr"], f"TLS handshake timed out {GITHUB_KEY}\n".encode())
                 raise subprocess.TimeoutExpired(command, kwargs["timeout"], output=KEY, stderr=GITHUB_KEY)
             return self.fake_cli(command, **kwargs)
         self.process.side_effect = fake
-        self.assertNotEqual(self.call("deploy-agent", ["--confirm-agent-deployment", "--managed-identity"])[0], 0)
+        code, output = self.call("deploy-agent", ["--confirm-agent-deployment", "--managed-identity"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("azd timed out", output)
+        self.assertIn("stdout: agent creation or deployment failed", output)
+        self.assertIn("stderr: network, DNS or TLS failure", output)
         self.assertEqual(self.records()[-1]["status"], "unconfirmed")
+        self.assertNotEqual(self.call("deploy-agent", ["--confirm-agent-deployment", "--managed-identity"])[0], 0)
+        self.assertEqual(self.process.call_count, 3)
 
     def test_success_without_matching_registered_agent_is_not_completion(self):
         self.assertEqual(self.prepare()[0], 0)
@@ -491,6 +808,132 @@ class ApplicationFlowTests(unittest.TestCase):
         with mock.patch.object(flow.tools.os, "fsync", side_effect=OSError("synthetic disk failure")):
             self.assertNotEqual(self.call("deploy-agent", ["--confirm-agent-deployment", "--managed-identity"])[0], 0)
         self.assertEqual(self.process.call_count, 2)
+
+
+class FailureDiagnosticsTests(unittest.TestCase):
+    def invoke(self, fake, *, capture=False, environment=None):
+        with mock.patch.object(flow.subprocess, "run", side_effect=fake) as process:
+            with self.assertRaises(flow.FlowError) as raised:
+                flow.invoke("azd.exe", ["deploy", AGENT], Path.cwd(), environment or {},
+                            flow.time.monotonic() + 10, capture=capture)
+            process.assert_called_once()
+        return str(raised.exception)
+
+    def test_nonzero_stdout_only_and_stderr_only_have_actionable_diagnostics(self):
+        for stream, payload, expected in (
+            ("stdout", b'ERROR: service "private-name" uses the unsupported nested config block\n',
+             "stdout: unsupported service configuration"),
+            ("stderr", b"HTTP 403: Forbidden\nprivate opaque response text\n",
+             "stderr: HTTP 403; authorization denied"),
+        ):
+            with self.subTest(stream=stream):
+                def fake(command, **kwargs):
+                    os.write(kwargs[stream], payload)
+                    return subprocess.CompletedProcess(command, 1)
+                output = self.invoke(fake)
+                self.assertIn(expected, output)
+                self.assertIn("exited with code 1", output)
+                self.assertNotIn("private", output)
+
+    def test_secret_values_are_removed_before_classifying_raw_and_encoded_forms(self):
+        secret = "AuthorizationFailed/Forbidden+synthetic="
+        for value in (secret, flow.quote(secret, safe="")):
+            with self.subTest(encoded=value != secret):
+                output = flow.failure_detail(value.encode(), {flow.KEY_VARIABLE: secret})
+                self.assertEqual(output, "unrecognized diagnostic; details withheld")
+                self.assertNotIn(secret, output)
+
+    def test_auth_headers_tokens_keys_connection_strings_and_arbitrary_text_are_withheld(self):
+        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGljc2lnbmF0dXJl"
+        github = "ghp_" + "A" * 36
+        pat = "github_pat_" + "B" * 82
+        key = "c3ludGhldGljLWtleS1ub3QtYS1yZWFsLWNyZWRlbnRpYWw="
+        values = (
+            f"Authorization: Bearer {jwt}", f'{{"Authorization": "Bearer {jwt}"}}',
+            f"Proxy-Authorization: Basic {key}", f"X-Api-Key: {key}",
+            f'access_token="{jwt}"', f"refresh_token={key}", f"client_secret={key}",
+            f"password={key}", f"Cookie: session={key}", f"Set-Cookie: session={key}",
+            f"DefaultEndpointsProtocol=https;AccountName=fixture;AccountKey={key};EndpointSuffix=core.windows.net",
+            f"Endpoint=sb://fixture.invalid/;SharedAccessKeyName=Root;SharedAccessKey={key}",
+            "InstrumentationKey=11111111-2222-3333-4444-555555555555;IngestionEndpoint=https://fixture.invalid/",
+            f"https://user:{key}@fixture.invalid/?sv=2026-01-01&sig={key}",
+            f"connection_string=Server=fixture;Password={key};", github, pat, jwt, "sk-" + "C" * 40,
+            "unrecognised-private-detail short-secret-value",
+        )
+        for value in values:
+            with self.subTest(form=value.split("=", 1)[0].split(":", 1)[0][:24]):
+                output = flow.failure_detail(
+                    ("ERROR: unsupported nested config block\n" + value).encode(), {},
+                )
+                self.assertEqual(output, "unsupported service configuration")
+                for private in (key, github, pat, jwt, "private-detail", "short-secret-value"):
+                    self.assertNotIn(private, output)
+
+    def test_large_streams_are_drained_and_only_bounded_tail_diagnostics_escape(self):
+        def fake(command, **kwargs):
+            for stream in ("stdout", "stderr"):
+                for _ in range(32):
+                    os.write(kwargs[stream], b"private-unstructured-output " * 256)
+                os.write(kwargs[stream], b"\nERROR: RESPONSE 429 TooManyRequests\n")
+            return subprocess.CompletedProcess(command, 1)
+        output = self.invoke(fake)
+        self.assertIn("stdout: HTTP 429; quota, capacity or throttling failure", output)
+        self.assertIn("stderr: HTTP 429; quota, capacity or throttling failure", output)
+        self.assertNotIn("private", output)
+        self.assertLessEqual(len(output), flow.DIAGNOSTIC_LIMIT + 50)
+        with flow.diagnostic_pipe() as (writer, data, complete):
+            os.write(writer, b"x" * (flow.DIAGNOSTIC_BYTES * 3))
+        self.assertTrue(complete.is_set())
+        self.assertEqual(len(data), flow.DIAGNOSTIC_BYTES)
+
+    def test_local_python_child_failure_and_timeout_capture_both_streams(self):
+        source = (
+            "import sys,time;"
+            "print('RESPONSE 403 Forbidden',flush=True);"
+            "print('failed to create agent version',file=sys.stderr,flush=True);"
+        )
+        for timeout in (False, True):
+            with self.subTest(timeout=timeout):
+                command = ["-E", "-s", "-B", "-c", source + ("time.sleep(30)" if timeout else "sys.exit(1)")]
+                with self.assertRaises(flow.FlowError) as raised:
+                    flow.invoke(sys.executable, command, Path.cwd(), flow.child_environment(),
+                                flow.time.monotonic() + (2 if timeout else 10))
+                output = str(raised.exception)
+                self.assertIn("timed out" if timeout else "exited with code 1", output)
+                self.assertIn("stdout: HTTP 403; authorization denied", output)
+                self.assertIn("stderr: agent creation or deployment failed", output)
+
+    def test_inspection_failure_and_timeout_do_not_project_json_or_stderr(self):
+        for timeout in (False, True):
+            with self.subTest(timeout=timeout):
+                def fake(command, **kwargs):
+                    os.write(kwargs["stderr"], b"RESPONSE 403 Forbidden " + KEY.encode())
+                    raw = json.dumps({"secret": KEY, "error": "Unsupported nested config block"})
+                    if timeout:
+                        raise subprocess.TimeoutExpired(command, kwargs["timeout"], output=raw, stderr=GITHUB_KEY)
+                    return subprocess.CompletedProcess(command, 1, stdout=raw)
+                output = self.invoke(fake, capture=True)
+                self.assertIn("Inspection output withheld", output)
+                for private in (KEY, GITHUB_KEY, "HTTP 403", "unsupported service configuration"):
+                    self.assertNotIn(private, output)
+
+    def test_success_preserves_return_values_without_printing_diagnostics(self):
+        for capture in (False, True):
+            with self.subTest(capture=capture):
+                raw = '{"installedVersion":"1.0.0"}'
+                def fake(command, **kwargs):
+                    os.write(kwargs["stderr"], KEY.encode())
+                    if not capture:
+                        os.write(kwargs["stdout"], GITHUB_KEY.encode())
+                    return subprocess.CompletedProcess(command, 0, stdout=raw)
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with mock.patch.object(flow.subprocess, "run", side_effect=fake) as process:
+                    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                        result = flow.invoke("azd.exe", ["version"], Path.cwd(), {},
+                                             flow.time.monotonic() + 10, capture=capture)
+                process.assert_called_once()
+                self.assertEqual(result, raw if capture else None)
+                self.assertEqual(stdout.getvalue() + stderr.getvalue(), "")
 
 
 if __name__ == "__main__":

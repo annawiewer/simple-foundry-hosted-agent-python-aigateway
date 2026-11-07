@@ -51,6 +51,9 @@ resource "azapi_resource" "storage" {
     }
   }
   response_export_values = ["properties.primaryEndpoints.blob"]
+  lifecycle {
+    ignore_changes = [body.properties.networkAcls.resourceAccessRules]
+  }
 }
 
 resource "azapi_resource" "registry" {

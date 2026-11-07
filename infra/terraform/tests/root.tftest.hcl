@@ -176,6 +176,7 @@ run "root_default" {
     condition = (
       length(azapi_resource.foundry_gateway_model_access) == 2 &&
       length(azapi_resource.foundry_gateway_tool_access) == 1 &&
+      length(azapi_resource.hosted_agent_runtime_access) == 0 &&
       length(azapi_resource.gateway_remote_tool) == 0 &&
       output.deployment_contract.integration.gateway_model_access_enabled &&
       output.deployment_contract.integration.gateway_tool_access_enabled &&
@@ -396,6 +397,128 @@ run "reject_duplicate_foundry_gateway_owners" {
   expect_failures = [azapi_resource.foundry_gateway_model_access]
 }
 
+run "root_hosted_agent_runtime_access" {
+  command = plan
+  variables {
+    hosted_agent_principals = {
+      digest = "00000000-0000-0000-0000-00000000000A"
+      second = "00000000-0000-0000-0000-00000000000b"
+    }
+  }
+  assert {
+    condition = (
+      toset(keys(azapi_resource.hosted_agent_runtime_access)) == toset([
+        "models-digest", "monitoring-digest", "models-second", "monitoring-second"
+      ]) &&
+      azapi_resource.hosted_agent_runtime_access["models-digest"].body.properties.principalId == "00000000-0000-0000-0000-00000000000a" &&
+      alltrue([for key, role in azapi_resource.hosted_agent_runtime_access :
+        role.body.properties.principalType == "ServicePrincipal" &&
+        (startswith(key, "models-") ?
+          role.parent_id == module.ai_gateway.gateway_id &&
+          endswith(role.body.properties.roleDefinitionId, "/a6b68e3d-a1f0-4c60-8678-237c050cf4ea") :
+          role.parent_id == module.foundry_agents.application_insights_id &&
+          endswith(role.body.properties.roleDefinitionId, "/3913510d-42f4-4e42-8a64-420c390055eb")
+        )
+      ])
+    )
+    error_message = "Actual hosted identities require only gateway Models User and agent-Insights publisher, with stable label keys and normalized principal IDs."
+  }
+}
+
+run "root_hosted_agent_runtime_access_disabled" {
+  command = plan
+  variables {
+    enable_foundry_gateway_model_access   = false
+    enable_foundry_monitoring_integration = false
+    hosted_agent_principals = {
+      digest = "00000000-0000-0000-0000-00000000000a"
+    }
+  }
+  assert {
+    condition     = length(azapi_resource.hosted_agent_runtime_access) == 0 && length(azapi_resource.foundry_gateway_tool_access) == 1
+    error_message = "Disabling model and monitoring integration must omit all hosted grants without coupling them to the project-only tool grant."
+  }
+}
+
+run "root_hosted_agent_models_only" {
+  command = plan
+  variables {
+    enable_foundry_gateway_tool_access    = false
+    enable_foundry_monitoring_integration = false
+    hosted_agent_principals = {
+      digest = "00000000-0000-0000-0000-00000000000a"
+    }
+  }
+  assert {
+    condition     = toset(keys(azapi_resource.hosted_agent_runtime_access)) == toset(["models-digest"])
+    error_message = "A hosted model caller must not implicitly enable monitoring or direct tool access."
+  }
+}
+
+run "root_hosted_agent_monitoring_only" {
+  command = plan
+  variables {
+    enable_foundry_gateway_model_access = false
+    enable_foundry_gateway_tool_access  = false
+    hosted_agent_principals = {
+      digest = "00000000-0000-0000-0000-00000000000A"
+    }
+    gateway_access_principals = {
+      separately_owned_models = { principal_id = "00000000-0000-0000-0000-00000000000a" }
+    }
+  }
+  assert {
+    condition     = toset(keys(azapi_resource.hosted_agent_runtime_access)) == toset(["monitoring-digest"])
+    error_message = "Hosted telemetry must work independently, including a Models User grant owned through the separate caller map."
+  }
+}
+
+run "reject_hosted_agent_invalid_principal" {
+  command = plan
+  variables {
+    hosted_agent_principals = { digest = "not-a-principal-uuid" }
+  }
+  expect_failures = [var.hosted_agent_principals]
+}
+
+run "reject_hosted_agent_duplicate_principals" {
+  command = plan
+  variables {
+    hosted_agent_principals = {
+      digest = "00000000-0000-0000-0000-00000000000A"
+      second = "00000000-0000-0000-0000-00000000000a"
+    }
+  }
+  expect_failures = [var.hosted_agent_principals]
+}
+
+run "reject_hosted_agent_account_identity" {
+  command = plan
+  variables {
+    hosted_agent_principals = { digest = "00000000-0000-0000-0000-000000000007" }
+  }
+  expect_failures = [azapi_resource.hosted_agent_runtime_access]
+}
+
+run "reject_hosted_agent_project_identity" {
+  command = plan
+  variables {
+    hosted_agent_principals = { digest = "00000000-0000-0000-0000-000000000004" }
+  }
+  expect_failures = [azapi_resource.hosted_agent_runtime_access]
+}
+
+run "reject_duplicate_hosted_gateway_owners" {
+  command = plan
+  variables {
+    hosted_agent_principals = { digest = "00000000-0000-0000-0000-00000000000A" }
+    gateway_access_principals = {
+      separately_owned_models = { principal_id = "00000000-0000-0000-0000-00000000000a" }
+    }
+  }
+  expect_failures = [azapi_resource.hosted_agent_runtime_access]
+}
+
 run "root_remote_tool" {
   command = plan
   variables {
@@ -490,6 +613,30 @@ run "root_all_integrations" {
       length(azapi_resource.gateway_remote_tool) == 1
     )
     error_message = "All explicit integrations must compose without hidden feature coupling or broader ownership."
+  }
+}
+
+run "root_project_local_registry" {
+  command = plan
+  variables {
+    share_foundry_registry_connection = false
+    gateway_remote_tool_endpoint      = "https://gateway.example.invalid/caller-verified-tool-endpoint"
+  }
+  override_resource {
+    target          = module.foundry_agents.azapi_resource.registry_connection
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-agents/providers/Microsoft.CognitiveServices/accounts/aiagents-470daa23c957/projects/proj-470daa23c957/connections/acr470daa23c957-conn" }
+  }
+  assert {
+    condition = (
+      !output.deployment_contract.integration.registry_connection_shared &&
+      output.deployment_contract.agents.registry_connection_id == "${output.deployment_contract.agents.project_id}/connections/${output.deployment_contract.agents.registry_connection_name}" &&
+      output.deployment_contract.integration.monitoring_enabled &&
+      output.deployment_contract.integration.gateway_model_access_enabled &&
+      output.deployment_contract.integration.gateway_tool_access_enabled &&
+      length(azapi_resource.gateway_remote_tool) == 1
+    )
+    error_message = "Project-local registry compatibility must retain exact connection ownership and all selected application integrations."
   }
 }
 

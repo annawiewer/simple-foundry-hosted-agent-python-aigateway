@@ -52,6 +52,24 @@ def source_blocks(kind):
     ]
 
 
+def check_lifecycle_masks(path, text):
+    masks = re.findall(r'\bignore_changes\s*=', text)
+    allowed = []
+    if path == ROOT / "modules" / "foundry-agents" / "main.tf":
+        allowed = [
+            lifecycle
+            for names, body in blocks(text, "resource")
+            if names == ["azapi_resource", "storage"]
+            for _, lifecycle in blocks(body, "lifecycle")
+            if re.fullmatch(
+                r'\s*ignore_changes\s*=\s*\[\s*'
+                r'body\.properties\.networkAcls\.resourceAccessRules\s*,?\s*\]\s*',
+                lifecycle,
+            )
+        ]
+    require(len(masks) == len(allowed) <= 1, f"{path}: broad lifecycle masking forbidden")
+
+
 def check_structure():
     modules = ROOT / "modules"
     require({p.name for p in modules.iterdir() if p.is_dir()} ==
@@ -72,7 +90,7 @@ def check_structure():
                     f"{path}: child provider requirements missing")
         require(not re.search(r'\b(provisioner|local-exec|remote-exec)\b', text),
                 f"{path}: provisioners are outside this baseline")
-        require(not re.search(r'\bignore_changes\s*=', text), f"{path}: broad lifecycle masking forbidden")
+        check_lifecycle_masks(path, text)
         for function, literal in re.findall(r'\b(file|templatefile|fileset)\s*\(\s*"([^"]+)"', text):
             relative = literal.replace("${path.module}", ".").replace("${path.root}", str(ROOT))
             require("${" not in relative, f"{path}: unverified dynamic {function} dependency")
@@ -310,7 +328,7 @@ def check_routes(resources, profile):
 
 
 def check_roles(resources, custom=False, foundry_gateway_access=False, monitoring=False,
-                tool_access=False, project_model_caller=False, native_dcr_id=None):
+                tool_access=False, extra_model_callers=(), native_dcr_id=None, hosted_agent_principals=()):
     models = resources["module.foundry_models.azapi_resource.models"]
     agents = resources["module.foundry_agents.azapi_resource.agents"]
     project = resources["module.foundry_agents.azapi_resource.project"]
@@ -336,8 +354,14 @@ def check_roles(resources, custom=False, foundry_gateway_access=False, monitorin
         }
     if tool_access:
         expected.add((gateway["id"], project_id, "dce03f8d-857f-4e40-a90d-67770fa6ecd2", "ServicePrincipal"))
-    if project_model_caller:
-        expected.add((gateway["id"], project_id, "a6b68e3d-a1f0-4c60-8678-237c050cf4ea", "ServicePrincipal"))
+    for identity in extra_model_callers:
+        expected.add((gateway["id"], identity, "a6b68e3d-a1f0-4c60-8678-237c050cf4ea", "ServicePrincipal"))
+    for identity in hosted_agent_principals:
+        if foundry_gateway_access:
+            expected.add((gateway["id"], identity, "a6b68e3d-a1f0-4c60-8678-237c050cf4ea", "ServicePrincipal"))
+        if monitoring:
+            insights = resources["module.foundry_agents.azapi_resource.insights"]
+            expected.add((insights["id"], identity, "3913510d-42f4-4e42-8a64-420c390055eb", "ServicePrincipal"))
     if monitoring:
         insights = resources["module.foundry_agents.azapi_resource.insights"]
         expected |= {
@@ -467,8 +491,22 @@ def check_plans():
                  "reject_remote_tool_http", "reject_remote_tool_credentials", "reject_remote_tool_query",
                  "reject_remote_tool_origin", "reject_duplicate_foundry_gateway_owners"}
     expected |= {"root_foundry_gateway_tool_access", "root_tool_access_with_model_caller"}
+    hosted_scenarios = {
+        "root_hosted_agent_runtime_access": (
+            "00000000-0000-0000-0000-00000000000a", "00000000-0000-0000-0000-00000000000b"
+        ),
+        "root_hosted_agent_runtime_access_disabled": ("00000000-0000-0000-0000-00000000000a",),
+        "root_hosted_agent_models_only": ("00000000-0000-0000-0000-00000000000a",),
+        "root_hosted_agent_monitoring_only": ("00000000-0000-0000-0000-00000000000a",),
+    }
+    expected |= hosted_scenarios.keys() | {
+        "reject_hosted_agent_invalid_principal", "reject_hosted_agent_duplicate_principals",
+        "reject_hosted_agent_account_identity", "reject_hosted_agent_project_identity",
+        "reject_duplicate_hosted_gateway_owners",
+    }
     expected |= {"agents_monitoring_integration", "root_monitoring_integration",
-                 "root_all_integrations", "agent_support_monitoring_integration", "alias_protocol_intersection"}
+                 "root_all_integrations", "root_project_local_registry",
+                 "agent_support_monitoring_integration", "alias_protocol_intersection"}
     expected |= {"root_content_safety_overrides", "root_content_safety_disabled",
                  "existing_models_content_safety", "models_gateway_safety_metadata"}
     native_ready = {"native_telemetry_ready", "root_native_telemetry", "gateway_only_native", "existing_models_native"}
@@ -489,6 +527,10 @@ def check_plans():
         "root_remote_tool": (False, False, False, False),
         "root_both_integrations": (True, False, False, False),
         "root_monitoring_integration": (False, False, True, False),
+        "root_project_local_registry": (True, True, True, False),
+        "root_hosted_agent_runtime_access_disabled": (False, True, False, True),
+        "root_hosted_agent_models_only": (True, False, False, True),
+        "root_hosted_agent_monitoring_only": (False, False, True, True),
     }
     for name, plan in plans.items():
         resources = resource_map(plan)
@@ -502,15 +544,23 @@ def check_plans():
         if name.startswith("root_"):
             gateway = check_gateway(resources, telemetry)
             model_access, tool_access, monitoring, shared_registry = root_settings.get(name, (True, True, True, True))
-            check_agents(resources, name in {"root_remote_tool", "root_both_integrations", "root_all_integrations"},
+            check_agents(resources, name in {"root_remote_tool", "root_both_integrations", "root_all_integrations",
+                                            "root_project_local_registry"},
                          monitoring, shared_registry)
             check_roles(resources, custom=name == "root_custom",
                         foundry_gateway_access=model_access,
                         monitoring=monitoring, tool_access=tool_access,
-                        project_model_caller=name == "root_tool_access_with_model_caller",
+                        extra_model_callers={
+                            "root_tool_access_with_model_caller": ("00000000-0000-0000-0000-000000000004",),
+                            "root_hosted_agent_monitoring_only": ("00000000-0000-0000-0000-00000000000a",),
+                        }.get(name, ()),
+                        hosted_agent_principals=hosted_scenarios.get(name, ()),
                         native_dcr_id=(resources["module.ai_gateway.azapi_resource.insights"]["output"]["data_collection_rule_id"]
                                        if name in native_ready else None))
             integration = plan["output_changes"]["deployment_contract"]["after"]["integration"]
+            require(plan["output_changes"]["deployment_contract"]["after"]["agents"]["registry_connection_id"] ==
+                    resources["module.foundry_agents.azapi_resource.registry_connection"]["id"],
+                    "The application handoff must export the owned registry connection ID")
             bootstrap = plan["output_changes"]["gateway_toolchain_bootstrap"]["after"]
             agents = resources["module.foundry_agents.azapi_resource.project"]
             require(bootstrap == {
@@ -652,6 +702,12 @@ def check_plans():
                 f"{run}: content safety must not change resource ownership")
     require(len(minimal) == 32 and len(default) == 37,
             "Native stage one defers the exporter; the full root still adds exactly five grants to the minimal graph")
+    hosted = resource_map(plans["root_hosted_agent_runtime_access"])
+    require(set(hosted) - set(default) == {
+                f'azapi_resource.hosted_agent_runtime_access["{role}-{label}"]'
+                for role in ("models", "monitoring") for label in ("digest", "second")
+            } and not set(default) - set(hosted),
+            "Explicit hosted identities must add only their two resource-scoped grants without changing existing owners")
     ready = resource_map(plans["root_native_telemetry"])
     legacy_resources = resource_map(plans["root_legacy_telemetry"])
     require(set(ready) - set(default) == {

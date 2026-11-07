@@ -26,6 +26,7 @@ from export_environment import arm_id, endpoint
 
 ARM = "https://management.azure.com"
 API = "2025-09-01-preview"
+RECEIPT_VERSION = 2
 CONNECTION_API = "2025-06-01"
 AUDIENCE = "https://azure-api.net/aigateway"
 GITHUB_MCP = "https://api.githubcopilot.com/mcp/"
@@ -40,9 +41,10 @@ BINDING_KEYS = {
 BOOTSTRAP_KEYS = BINDING_KEYS | {
     "version", "tool_access_enabled", "remote_tool_connection_id", "remote_tool_endpoint",
 }
-SERVER_ACTIONS = {"create-toolserver", "rotate-credential", "inspect-toolserver"}
+SERVER_ACTIONS = {"create-toolserver", "rotate-credential", "repair-toolserver", "inspect-toolserver"}
 BOX_ACTIONS = {"create-toolbox", "inspect-toolbox"}
-WRITE_ACTIONS = {"create-toolserver", "rotate-credential", "create-toolbox"}
+CREDENTIAL_ACTIONS = {"create-toolserver", "rotate-credential", "repair-toolserver"}
+WRITE_ACTIONS = CREDENTIAL_ACTIONS | {"create-toolbox"}
 
 
 class ToolchainError(ValueError):
@@ -60,11 +62,15 @@ def remaining(deadline, limit=30):
     return min(limit, seconds)
 
 
-def read_text(path):
+def read_bytes(path):
     with path.open("rb") as stream:
         value = stream.read(MAX_BYTES + 1)
     require(len(value) <= MAX_BYTES, "Input exceeds the bounded size; contents withheld.")
-    return value.decode("utf-8-sig")
+    return value
+
+
+def read_text(path):
+    return read_bytes(path).decode("utf-8-sig")
 
 
 def origin(value):
@@ -123,7 +129,8 @@ def configuration(repository, cidrs, owner=None):
             "allowed_client_cidrs": sorted({str(network) for network in networks})}
 
 
-def server_body(config, credential=None):
+def server_body(config, credential=None, *, version=RECEIPT_VERSION):
+    require(type(version) is int and version in (1, RECEIPT_VERSION), "Unsupported toolchain receipt version.")
     policy = {"type": "contentSafety", **{
         category + "Severity": "Medium" for category in ("hate", "selfHarm", "sexual", "violence")
     }}
@@ -133,18 +140,26 @@ def server_body(config, credential=None):
     headers = {"X-MCP-Readonly": ["true"], "X-MCP-Tools": [TOOLS]}
     if credential is not None:
         headers["Authorization"] = ["Bearer " + credential]
-    return {"properties": {
+    properties = {
         "displayName": "GitHub repository digest",
         "description": "Read-only GitHub tools for repository digests. Owner: terraform-toolchain/" + config["owner_id"],
-        "type": "mcp", "failureMode": "failClosed", "policies": policies,
+        "type": "mcp", "policies": policies,
         "endpoints": [{"namespace": "github", "kind": "mcp",
                        "mcp": {"url": GITHUB_MCP, "transport": "streamableHttp"},
                        "credentials": {"type": "header", "headers": headers}}],
-    }}
+    }
+    if version == 1:
+        # Retain the original body only to verify historical receipt hashes.
+        properties["failureMode"] = "failClosed"
+    else:
+        properties["endpoints"][0]["required"] = True
+        for item in policies:
+            item["scope"] = "resource"
+    return {"properties": properties}
 
 
-def config_hash(config):
-    document = {"configuration": config, "body": server_body(config)}
+def config_hash(config, *, version=RECEIPT_VERSION):
+    document = {"configuration": config, "body": server_body(config, version=version)}
     return hashlib.sha256(json.dumps(document, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -152,8 +167,9 @@ def binding(bootstrap, tenant):
     return {**{key: bootstrap[key] for key in BINDING_KEYS}, "tenant_id": tenant}
 
 
-def read_receipt(path, bootstrap, tenant):
-    text = read_text(path)
+def read_receipt(path, bootstrap, tenant, *, include_digest=False):
+    source = read_bytes(path)
+    text = source.decode("utf-8-sig")
     complete = text.split("\n")[:-1]
     require(complete, "No complete receipt record. Do not adopt an existing resource.")
     records = [json.loads(line) for line in complete]
@@ -161,20 +177,28 @@ def read_receipt(path, bootstrap, tenant):
     for record in records:
         require(isinstance(record, dict) and set(record) <= {
             "version", "operation", "status", "binding", "configuration",
-            "configuration_hash", "mutation_attempted", "toolserver", "toolbox",
+            "configuration_hash", "mutation_attempted", "toolserver", "toolbox", "upgraded_from_sha256",
         }, "Invalid receipt shape; contents withheld.")
         config = record["configuration"]
         require(isinstance(config, dict) and set(config) == {"owner_id", "repository", "allowed_client_cidrs"},
                 "Invalid nonsecret configuration receipt.")
         require(config == configuration(config["repository"], config["allowed_client_cidrs"], config["owner_id"]),
                 "Receipt CIDRs must be normalized.")
-        require(type(record["version"]) is int and record["version"] == 1
+        require(type(record["version"]) is int and record["version"] in (1, RECEIPT_VERSION)
                 and record["operation"] in SERVER_ACTIONS | BOX_ACTIONS
                 and record["status"] in {"prepared", "pending", "configured", "unconfirmed"}
                 and type(record["mutation_attempted"]) is bool
                 and record["binding"] == binding(bootstrap, tenant)
-                and record["configuration_hash"] == config_hash(config),
+                and record["configuration_hash"] == config_hash(config, version=record["version"]),
                 "Receipt context or configuration mismatch; no adoption or update.")
+        if "upgraded_from_sha256" in record:
+            require(record["version"] == RECEIPT_VERSION
+                    and isinstance(record["upgraded_from_sha256"], str)
+                    and re.fullmatch(r"[0-9a-f]{64}", record["upgraded_from_sha256"]) is not None,
+                    "Invalid receipt-upgrade provenance.")
+        require(record["operation"] != "repair-toolserver"
+                or (record["version"] == RECEIPT_VERSION and "upgraded_from_sha256" in record),
+                "A repair receipt must preserve its legacy source fingerprint.")
         if "toolserver" in record:
             server = record["toolserver"]
             require(isinstance(server, dict) and set(server) == {"etag", "endpoint"},
@@ -190,13 +214,14 @@ def read_receipt(path, bootstrap, tenant):
             if "version" in box:
                 require(box == toolbox_metadata(bootstrap, selected_name, box["version"]),
                         "Toolbox receipt endpoint does not match the project and version.")
-        current = (record["binding"], config, record["configuration_hash"], record["operation"])
+        current = (record["version"], record["binding"], config, record["configuration_hash"],
+                   record["operation"], record.get("upgraded_from_sha256"))
         require(immutable is None or immutable == current, "Receipt changes its ownership or operation.")
         immutable = current
     result = copy.deepcopy(records[-1])
     if not text.endswith("\n"):
         result["status"] = "unconfirmed"
-    return result
+    return (result, hashlib.sha256(source).hexdigest()) if include_digest else result
 
 
 def safe_json(document, secrets):
@@ -306,7 +331,34 @@ def valid_etag(value):
     return value
 
 
-def server_readback(document, header_etag, bootstrap, config):
+def returned_mcp_endpoint(properties, bootstrap):
+    legacy = properties.pop("mcpEndpointUrl", None)
+    result = mcp_endpoint(legacy, bootstrap) if legacy not in (None, "") else None
+    if "gatewayEndpoints" not in properties:
+        return result
+    entries = properties.pop("gatewayEndpoints")
+    require(isinstance(entries, list) and len(entries) <= 1,
+            "ToolServer must return one unambiguous MCP gateway endpoint.")
+    if not entries:
+        return result
+    entry = entries[0]
+    require(isinstance(entry, dict) and set(entry) in (
+        {"api", "url"}, {"api", "url", "baseUrl"},
+    ) and entry["api"] == "mcp", "ToolServer gateway endpoint metadata is unsupported.")
+    returned = mcp_endpoint(entry["url"], bootstrap)
+    if "baseUrl" in entry:
+        base = entry["baseUrl"]
+        require(origin(base) == origin(bootstrap["gateway_endpoint"]),
+                "The MCP base URL must be credential-free and on this gateway.")
+        base_path = urlsplit(base).path.rstrip("/")
+        path = urlsplit(returned).path
+        require("%" not in base_path and (path == base_path or path.startswith(base_path + "/")),
+                "The MCP invocation URL conflicts with its base URL.")
+    require(result is None or result == returned, "Conflicting service-returned MCP endpoint URLs.")
+    return returned
+
+
+def server_readback(document, header_etag, bootstrap, config, *, version=RECEIPT_VERSION):
     require(isinstance(document, dict) and isinstance(document.get("id"), str)
             and document["id"].lower() == (bootstrap["workspace_id"] + "/toolServers/github").lower()
             and isinstance(document.get("properties"), dict), "ToolServer readback identity is invalid.")
@@ -316,17 +368,37 @@ def server_readback(document, header_etag, bootstrap, config):
     actual = copy.deepcopy(document["properties"])
     state = actual.pop("provisioningState", None)
     actual.pop("state", None)
-    returned_endpoint = actual.pop("mcpEndpointUrl", None)
     require(state not in ("Failed", "Canceled", "Cancelled", "Deleting"), "ToolServer provisioning failed.")
     endpoints = actual.get("endpoints")
     require(isinstance(endpoints, list) and len(endpoints) == 1 and isinstance(endpoints[0], dict),
             "ToolServer endpoint ownership changed.")
     endpoints[0].pop("id", None)
     credentials = endpoints[0].get("credentials")
-    require(isinstance(credentials, dict) and credentials.get("headers") in (None, {}),
-            "Ordinary ToolServer GET exposed header values; no handoff or further mutation.")
-    credentials.pop("headers", None)
-    expected = server_body(config)["properties"]
+    require(isinstance(credentials, dict), "ToolServer credential metadata is invalid; values withheld.")
+    headers = credentials.pop("headers", None)
+    require(headers is None or (
+        isinstance(headers, dict) and set(headers) <= {"Authorization", "X-MCP-Readonly", "X-MCP-Tools"}
+        and all(value is None for value in headers.values())
+    ), "Ordinary ToolServer GET returned unsupported credential-header data; no handoff or further mutation.")
+    require("failureMode" not in actual or actual["failureMode"] == "failClosed",
+            "ToolServer returned conflicting failure behavior; no handoff or further mutation.")
+    failure_mode = actual.pop("failureMode", None)
+    require(endpoints[0].get("required") is True or (
+        version == 1 and "required" not in endpoints[0] and failure_mode == "failClosed"
+    ), "ToolServer does not confirm fail-closed endpoint behavior (required=true); no handoff or further mutation.")
+    if version == 1:
+        endpoints[0].pop("required", None)
+        actual["failureMode"] = "failClosed"
+    policies = actual.get("policies")
+    require(isinstance(policies, list) and all(isinstance(item, dict) for item in policies),
+            "ToolServer policy shape changed; no overwrite.")
+    for policy in policies:
+        require(policy.get("scope") == "resource" or (version == 1 and "scope" not in policy),
+                "ToolServer policy scope must remain resource; no handoff or further mutation.")
+        if version == 1:
+            policy.pop("scope", None)
+    returned_endpoint = returned_mcp_endpoint(actual, bootstrap)
+    expected = server_body(config, version=version)["properties"]
     expected["endpoints"][0]["credentials"].pop("headers")
     require(actual == expected, "ToolServer policy, endpoint or ownership drift; no overwrite.")
     if state not in (None, "Succeeded") or not returned_endpoint:
@@ -334,13 +406,32 @@ def server_readback(document, header_etag, bootstrap, config):
     return {"etag": etag, "endpoint": mcp_endpoint(returned_endpoint, bootstrap)}
 
 
-def wait_server(client, bootstrap, config, deadline):
+def repair_candidate(document, header_etag, bootstrap, config):
+    candidate = copy.deepcopy(document)
+    properties = candidate.get("properties", {}) if isinstance(candidate, dict) else {}
+    endpoints = properties.get("endpoints") if isinstance(properties, dict) else None
+    require(isinstance(endpoints, list) and len(endpoints) == 1 and isinstance(endpoints[0], dict)
+            and endpoints[0].get("required") is False,
+            "Explicit repair only accepts the known required=false compatibility defect.")
+    endpoint_id = endpoints[0].get("id")
+    require(isinstance(endpoint_id, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", endpoint_id) is not None,
+            "Repair requires the existing stable endpoint identifier.")
+    # Validate every other field without treating the hypothetical copy as live acceptance.
+    endpoints[0]["required"] = True
+    current = server_readback(candidate, header_etag, bootstrap, config)
+    require(current is not None, "The repair candidate is not ready; no mutation.")
+    return current, endpoint_id
+
+
+def wait_server(client, bootstrap, config, deadline, *, version=RECEIPT_VERSION, endpoint_id=None):
     for attempt in range(30):
         status, document, etag = client.call("GET", bootstrap["workspace_id"] + "/toolServers/github", API)
         remaining(deadline)
         if status == 200:
-            result = server_readback(document, etag, bootstrap, config)
+            result = server_readback(document, etag, bootstrap, config, version=version)
             if result is not None:
+                require(endpoint_id is None or document["properties"]["endpoints"][0].get("id") == endpoint_id,
+                        "The endpoint identifier changed during repair; no handoff.")
                 return result
         else:
             require(status in (0, 404, 408, 429, 500, 502, 503, 504),
@@ -350,10 +441,10 @@ def wait_server(client, bootstrap, config, deadline):
     raise ToolchainError("ToolServer readiness limit reached. Preserve the receipt and use inspect-toolserver.")
 
 
-def get_server(client, bootstrap, config):
+def get_server(client, bootstrap, config, *, version=RECEIPT_VERSION):
     status, document, etag = client.call("GET", bootstrap["workspace_id"] + "/toolServers/github", API)
     require(status == 200, "ToolServer GET failed; no mutation.")
-    result = server_readback(document, etag, bootstrap, config)
+    result = server_readback(document, etag, bootstrap, config, version=version)
     require(result is not None, "ToolServer is not ready; no mutation.")
     return result
 
@@ -365,6 +456,7 @@ def mark_mutation(stream, record, secrets):
 
 def configure_server(args, bootstrap, record, previous, client, credential, stream, secrets, deadline):
     identifier = bootstrap["workspace_id"] + "/toolServers/github"
+    endpoint_id = None
     if args.operation == "create-toolserver":
         status, document, _ = client.call("GET", identifier, API)
         error = document.get("error", document) if isinstance(document, dict) else None
@@ -372,22 +464,36 @@ def configure_server(args, bootstrap, record, previous, client, credential, stre
                 and error.get("code") == "ResourceNotFound" and error.get("message") == "ToolServer not found.",
                 "Creation requires the exact missing-ToolServer response; existing resources are never adopted.")
         etag = None
+    elif args.operation == "repair-toolserver":
+        status, document, header_etag = client.call("GET", identifier, API)
+        require(status == 200, "The owned repair target is unavailable; no mutation.")
+        current, endpoint_id = repair_candidate(document, header_etag, bootstrap, record["configuration"])
+        require("toolserver" not in previous or current["endpoint"] == previous["toolserver"]["endpoint"],
+                "The repair endpoint differs from the historical receipt; no mutation.")
+        record["toolserver"] = current
+        etag = current["etag"]
     else:
-        current = get_server(client, bootstrap, record["configuration"])
+        current = get_server(client, bootstrap, record["configuration"], version=record["version"])
         if args.operation == "inspect-toolserver":
             record["toolserver"] = current
             return
         require(previous["status"] == "configured" and current == previous.get("toolserver"),
                 "The ToolServer changed since the receipt. Inspect it before explicitly retrying rotation.")
         etag = current["etag"]
+    body = server_body(record["configuration"], credential, version=record["version"])
+    if endpoint_id is not None:
+        body["properties"]["endpoints"][0]["id"] = endpoint_id
     mark_mutation(stream, record, secrets)
-    status, _, _ = client.call("PUT", identifier, API, server_body(record["configuration"], credential), etag)
+    status, _, _ = client.call(
+        "PUT", identifier, API, body, etag,
+    )
     require(status in (200, 201, 202),
             "ToolServer mutation did not complete successfully. No retry; preserve the receipt and inspect.")
-    record["toolserver"] = wait_server(client, bootstrap, record["configuration"], deadline)
-    require(args.operation != "rotate-credential"
-            or record["toolserver"]["endpoint"] == previous["toolserver"]["endpoint"],
-            "The MCP endpoint changed during rotation. Inspect and review the connection handoff before proceeding.")
+    record["toolserver"] = wait_server(
+        client, bootstrap, record["configuration"], deadline, version=record["version"], endpoint_id=endpoint_id,
+    )
+    require(args.operation == "create-toolserver" or record["toolserver"]["endpoint"] == current["endpoint"],
+            "The MCP endpoint changed during the update. Inspect and review the connection handoff before proceeding.")
 
 
 def toolbox_body(record):
@@ -427,8 +533,10 @@ def verify_connection(client, bootstrap, server):
     properties = document.get("properties", {})
     require(isinstance(properties, dict) and all(properties.get(key) == value for key, value in {
         "category": "RemoteTool", "authType": "ProjectManagedIdentity",
-        "audience": AUDIENCE, "target": server["endpoint"], "isSharedToAll": True,
-    }.items()) and isinstance(properties.get("metadata"), dict)
+        "audience": AUDIENCE, "target": server["endpoint"],
+    }.items()) and isinstance(properties.get("isSharedToAll"), bool)
+            and properties.get("error") in (None, "")
+            and isinstance(properties.get("metadata"), dict)
             and properties["metadata"].get("type") == "custom_MCP"
             and not properties.get("credentials"),
             "RemoteTool readback differs from the intended managed-identity connection; no Toolbox write.")
@@ -453,7 +561,7 @@ def inspect_toolbox(client, bootstrap, record, expected_version=None):
 
 
 def configure_toolbox(args, bootstrap, record, previous, arm, foundry, stream, secrets):
-    current = get_server(arm, bootstrap, record["configuration"])
+    current = get_server(arm, bootstrap, record["configuration"], version=record["version"])
     require(current == previous.get("toolserver"), "ToolServer changed; inspect it before configuring Toolbox.")
     verify_connection(arm, bootstrap, current)
     record["toolserver"] = current
@@ -492,6 +600,7 @@ def arguments(argv):
     parser.add_argument("--credential-env")
     parser.add_argument("--confirm-read-only-credential", action="store_true")
     parser.add_argument("--confirm-exclusive-owner", action="store_true")
+    parser.add_argument("--confirm-receipt-upgrade", action="store_true")
     parser.add_argument("--toolbox-name")
     parser.add_argument("--tfvars", type=pathlib.Path)
     parser.add_argument("--environment-json", type=pathlib.Path)
@@ -505,10 +614,12 @@ def prepare(args):
     require(args.operation not in WRITE_ACTIONS or
             (args.confirm_exclusive_owner and bootstrap["tool_access_enabled"]),
             "Writes require enabled project tool access and explicit exclusive-owner confirmation.")
-    needs_credential = args.operation in {"create-toolserver", "rotate-credential"}
+    needs_credential = args.operation in CREDENTIAL_ACTIONS
     require((args.credential_env is not None) == needs_credential
             and args.confirm_read_only_credential == needs_credential,
-            "Only create/rotation accepts an explicitly selected, confirmed repository-restricted read-only credential.")
+            "Only create/rotation/repair accepts an explicitly selected, confirmed repository-restricted read-only credential.")
+    require(args.confirm_receipt_upgrade == (args.operation == "repair-toolserver"),
+            "Receipt upgrade requires the explicit repair operation and confirmation.")
     if needs_credential:
         require(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", args.credential_env) is not None,
                 "Select the credential by environment-variable name, never a command-line value.")
@@ -523,6 +634,7 @@ def prepare(args):
     for path in outputs:
         new_output(path, inputs, tfvars=path == args.tfvars)
     previous = None
+    version = RECEIPT_VERSION
     if args.operation == "create-toolserver":
         require(args.previous_receipt is None and args.toolbox_name is None,
                 "Creation does not adopt an existing receipt or Toolbox.")
@@ -530,15 +642,31 @@ def prepare(args):
     else:
         require(args.previous_receipt is not None and args.repository is None and not args.allow_client_cidr,
                 "Use the previous ownership receipt; configuration changes are not credential rotation.")
-        previous = read_receipt(args.previous_receipt, bootstrap, args.tenant_id)
+        previous, previous_digest = read_receipt(
+            args.previous_receipt, bootstrap, args.tenant_id, include_digest=True,
+        )
+        version = previous["version"]
+        if args.operation == "repair-toolserver":
+            require(version == 1 and previous["operation"] == "create-toolserver"
+                    and previous["status"] in {"pending", "unconfirmed"} and previous["mutation_attempted"]
+                    and "toolbox" not in previous,
+                    "Repair requires the original unconfirmed version-1 create receipt; no replay or adoption.")
+            version = RECEIPT_VERSION
+        else:
+            require(version == RECEIPT_VERSION or args.operation not in WRITE_ACTIONS,
+                    "Version-1 receipts are read-only; migration requires separate review, never an automatic write.")
         config = previous["configuration"]
         if args.operation in {"rotate-credential", "create-toolbox"}:
             require(previous["status"] == "configured", "Inspect an unconfirmed operation before any further mutation.")
     record = {
-        "version": 1, "operation": args.operation, "status": "prepared",
+        "version": version, "operation": args.operation, "status": "prepared",
         "binding": binding(bootstrap, args.tenant_id), "configuration": config,
-        "configuration_hash": config_hash(config), "mutation_attempted": False,
+        "configuration_hash": config_hash(config, version=version), "mutation_attempted": False,
     }
+    if args.operation == "repair-toolserver":
+        record["upgraded_from_sha256"] = previous_digest
+    elif previous and "upgraded_from_sha256" in previous:
+        record["upgraded_from_sha256"] = previous["upgraded_from_sha256"]
     if previous and "toolserver" in previous:
         record["toolserver"] = previous["toolserver"]
     if previous and "toolbox" in previous:

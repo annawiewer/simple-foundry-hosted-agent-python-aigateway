@@ -68,7 +68,7 @@ variable "gateway_native_telemetry" {
 }
 
 variable "enable_foundry_gateway_model_access" {
-  description = "Create root-owned AI Gateway Models User grants for both Foundry account and project identities at exact gateway scope. Enabled for the application root; set false to omit. Does not configure tools or prove runtime authentication."
+  description = "Create root-owned AI Gateway Models User grants for Foundry account/project identities and explicitly supplied hosted_agent_principals at exact gateway scope. Enabled for the application root; set false to omit. Does not configure tools or prove runtime authentication."
   type        = bool
   default     = true
   nullable    = false
@@ -82,14 +82,14 @@ variable "enable_foundry_gateway_tool_access" {
 }
 
 variable "enable_foundry_monitoring_integration" {
-  description = "Use ProjectManagedIdentity on the existing owned Foundry AppInsights connection and create two Insights-scoped publisher grants. Enabled for the application root; false selects the legacy ApiKey body without publisher grants. Not gateway OpenTelemetry, tracing-delivery or Entra-only acceptance."
+  description = "Use ProjectManagedIdentity on the existing owned Foundry AppInsights connection and create Insights-scoped publisher grants for account/project identities and explicitly supplied hosted_agent_principals. Enabled for the application root; false selects the legacy ApiKey body without these publisher grants. Not gateway OpenTelemetry or tracing-delivery acceptance."
   type        = bool
   default     = true
   nullable    = false
 }
 
 variable "share_foundry_registry_connection" {
-  description = "Mark the existing project-managed-identity registry connection shared, matching the Bicep application root. Set false to keep it unshared. Does not enable registry admin credentials or broaden the project AcrPull role."
+  description = "Request sharing on the existing project-managed-identity registry connection, matching the Bicep application root. Set false for project-local compatibility when Azure returns it unshared; sharing is not an application-preparation requirement. Does not enable registry admin credentials or broaden the project AcrPull role. Verify the selected request with Azure readback and a fresh plan."
   type        = bool
   default     = true
   nullable    = false
@@ -126,6 +126,27 @@ variable "gateway_access_principals" {
       false
     )
     error_message = "Each gateway caller object ID must appear only once, regardless of letter case."
+  }
+}
+
+variable "hosted_agent_principals" {
+  description = "Opt-in postdeployment map of stable labels to actual agent-version instance_identity.principal_id UUIDs, not account/project identities or client IDs. Adds gateway Models User and agent Insights publisher roles under their respective integration flags. Empty preserves existing ownership; import independently verified existing assignments before applying."
+  type        = map(string)
+  default     = {}
+  nullable    = false
+  validation {
+    condition = alltrue([
+      for principal_id in var.hosted_agent_principals :
+      can(regex("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", principal_id))
+    ])
+    error_message = "Each hosted agent principal must be an independently verified Entra object UUID."
+  }
+  validation {
+    condition = try(
+      length(distinct([for principal_id in var.hosted_agent_principals : lower(principal_id)])) == length(var.hosted_agent_principals),
+      false
+    )
+    error_message = "Each hosted agent principal must appear only once, regardless of letter case."
   }
 }
 

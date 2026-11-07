@@ -3,7 +3,8 @@
 One Terraform composition root calls three independent capability modules.
 The opt-in [application flow](application-flow.md) connects its staged handoffs
 to the shared agent and a separately enabled routine, without changing Bicep.
-Full hosted parity remains unaccepted; see the [acceptance matrix](evidence-map.md#acceptance-matrix).
+The on-demand hosted digest is accepted; broader lifecycle scenarios remain
+separate. See the [acceptance matrix](evidence-map.md#acceptance-matrix).
 
 ## Offline and deployment preparation
 
@@ -49,20 +50,32 @@ terraform "-chdir=$TerraformRoot" plan -input=false
 
 These are Azure-enabled commands, not part of the offline check. Review the
 current plan before authorizing apply; no automatic deployment is implied.
-Gateway telemetry defaults to a pending first stage. Follow the
-[native telemetry guide](native-telemetry.md) to obtain the explicit readiness
-handoff and complete a fresh second-stage plan with the same root/workspace
-and original inputs. Do not use the initial plan as a completed exporter plan.
-Then follow the [guided application sequence](application-flow.md) for the
-tool handoffs, isolated offline preparation and separately authorized agent
-and schedule operations. It never substitutes native azd Terraform provisioning
-for this locked, explicit plan/apply process.
+Continue according to the selected root:
+
+- **Models-only or agent-support-only:** separately authorize that root's apply
+  with the same workspace and inputs, then use the outputs in the
+  [models-only](../examples/models-only/README.md) or
+  [agent-support-only](../examples/agent-support-only/README.md) README.
+  These examples have no gateway telemetry or application stages.
+- **Full root, gateway-only or existing-models:** native gateway telemetry
+  defaults to a pending first stage. Follow the
+  [native telemetry guide](native-telemetry.md) for both applies, the explicit
+  readiness handoff and a fresh second-stage plan. Keep the same root/workspace
+  and original inputs; the initial plan is not a completed exporter plan.
+  If deliberately retaining legacy telemetry, follow its
+  [compatibility guidance](native-telemetry.md#legacy-compatibility) instead.
+
+Only the **full root** optionally continues to the
+[guided application sequence](application-flow.md) for the tool handoffs,
+isolated offline preparation and separately authorized agent and schedule
+operations. It never substitutes native azd Terraform provisioning for this
+locked, explicit plan/apply process.
 
 ## Ownership and graph
 
 | Owner | Scope |
 |---|---|
-| Composition root | Naming/tags, three new workload groups, module composition, default Foundry gateway grants, optional RemoteTool and outputs |
+| Composition root | Naming/tags, three new workload groups, module composition, default Foundry gateway grants, opt-in deployed-agent runtime grants, optional RemoteTool and outputs |
 | [foundry-models](../modules/foundry-models/README.md) | Model account, serialized deployments, backend filters and optional developer grants |
 | [ai-gateway](../modules/ai-gateway/README.md) | Gateway/identity, key resource, monitoring/exporter, backend grant, provider/catalog/aliases and selected model callers |
 | [foundry-agents](../modules/foundry-agents/README.md) | Account/project, Storage/ACR, monitoring, internal grants and three support connections |
@@ -81,7 +94,8 @@ gateway monitoring -> GET-only readiness handoff -> fresh plan -> DCR grant -> e
 backend descriptor + gateway identity -> backend grant -> provider -> catalog -> aliases
 root -> agent account/project -> support grants -> Storage/ACR connections
 tool runner -> ToolServer -> explicit endpoint handoff -> Terraform RemoteTool -> tool runner Toolbox
-applied contract + connected bootstrap + Toolbox receipt -> offline app workspace -> agent -> explicit schedule gate
+applied contract + connected bootstrap + Toolbox receipt -> offline app workspace -> agent
+agent-version identity readback -> opt-in runtime grants -> on-demand acceptance -> explicit schedule gate
 ```
 
 The gateway owns its backend grant to avoid a sibling-module RBAC cycle.
@@ -94,6 +108,7 @@ not establish propagation or runtime authorization.
 |---|---|
 | `model_deployments`, `model_aliases` | Null selects the bundled [profile](../model-profile.json). Custom deployment keys need compatible aliases. Root null aliases select the profile, unlike the gateway module's per-deployment default. |
 | `gateway_access_principals` | Explicit gateway-scoped Models User callers; no tool grant |
+| `hosted_agent_principals` | Empty by default. Stable labels map to independently verified deployed-agent principal UUIDs for root-owned model/telemetry grants; no automatic role adoption or direct tool grant. |
 | `gateway_telemetry_mode`, `gateway_native_telemetry` | Default `OpenTelemetry` with null handoff leaves export pending. The [staged path](native-telemetry.md) creates the DCR publisher/exporter; explicit `ApplicationInsights` retains legacy compatibility. |
 | `developer_principal_id`, `developer_principal_type` | Optional model/agent developer grants, not gateway tool access |
 | `api2026_resource_group_name` | Optional single **new owned** group; not adoption, consolidation or migration |
@@ -122,10 +137,10 @@ These settings do not deploy an application or provision its tools.
 
 | Setting | Root default | Managed change |
 |---|---|---|
-| `enable_foundry_gateway_model_access` | `true` | Two root-owned gateway-scoped Models User grants for the agent account/project. Do not duplicate those grants in `gateway_access_principals`. |
+| `enable_foundry_gateway_model_access` | `true` | Root-owned gateway-scoped Models User grants for account/project and any explicit `hosted_agent_principals`. Do not duplicate these bindings in `gateway_access_principals`. |
 | `enable_foundry_gateway_tool_access` | `true` | One root-owned gateway-scoped Tools User grant for the project only. No account/developer tool permission or ToolServer creation. |
-| `enable_foundry_monitoring_integration` | `true` | In-place project Insights connection switch to managed identity and account/project publisher grants at the agent Insights scope. No second connection owner. |
-| `share_foundry_registry_connection` | `true` | Mark the existing project-managed-identity registry connection shared, matching Bicep. Registry admin stays disabled; project AcrPull stays registry-scoped. |
+| `enable_foundry_monitoring_integration` | `true` | In-place project Insights connection switch to managed identity and publisher grants for account/project and any explicit `hosted_agent_principals` at agent Insights scope. No second connection owner. |
+| `share_foundry_registry_connection` | `true` | Request sharing on the existing project-managed-identity registry connection, matching Bicep. Explicit false supports project-local compatibility; neither choice changes registry admin or the registry-scoped project AcrPull grant. |
 | `gateway_remote_tool_endpoint` | `null` | Explicit service-established HTTPS MCP URL on this gateway; creates the project-owned shared `aigw-github` RemoteTool with managed-identity auth. No guessed URL, credential or Toolbox. |
 
 **Upgrading an existing root:** omitted switches now select five additional
@@ -147,7 +162,8 @@ map with null severities; see [content-safety defaults and opt-outs](../README.m
 Changing these values on an already configured deployment can remove grants or
 change connection authentication/sharing. No state adoption or automatic
 migration is included. The nonsecret contract reports the selected settings,
-including `integration.registry_connection_shared`.
+including `integration.registry_connection_shared`, which reports the configured
+sharing request rather than independent Azure readback.
 
 A selected RemoteTool waits for the selected tools grant, not for proven
 propagation. Model access is independent. The connection API remains
@@ -155,6 +171,47 @@ propagation. Model access is independent. The connection API remains
 The monitoring option affects **Foundry agent monitoring**, not the gateway's
 separate native OpenTelemetry stages. Omitting ApiKey credentials in the
 managed-identity body does not establish stored credential erasure.
+
+The actual hosted Agent Identity is a separate postdeployment input, not a
+substitute for either support identity. Follow the
+[identity handoff and existing-role import boundary](application-flow.md#3-bind-the-deployed-agent-identity).
+With the default empty map, the root still owns the same 37 stage-one resources
+and 11 scoped roles; no hosted identity is inferred and no permission is added.
+
+### Project-local registry compatibility
+
+The root retains the Bicep-matching sharing request by default. In the
+November 6, 2026 deployment, Azure returned `isSharedToAll=false` despite that
+request, while the project's connections API listed the exact owned registry
+connection with its expected target and registry ID. This observation does not
+establish why the service returned false or how every region/API behaves.
+
+After independently verifying that project-local connection and its scoped
+permissions, explicitly select:
+
+```hcl
+share_foundry_registry_connection = false
+```
+
+Keep all original inputs and applied handoffs on the fresh plan; a separate
+compatibility tfvars file can make this choice explicit. Review every proposed
+change before a separately approved apply. Do not ignore the drift, change the
+connection API, create another owner or broaden access to force sharing.
+
+The application helper accepts either boolean sharing choice, but requires
+`agents.registry_connection_id` to match the declared project and exact
+connection name. Older version-1 exports remain valid for the standalone
+environment adapter but must be re-exported before application preparation.
+Neither the connection ID nor the configured sharing flag proves current
+Azure state, working image pulls or role propagation.
+
+Official [existing-project ACR selection](https://github.com/Azure/azure-dev/blob/2021ef8fbc8a06771199b3f99e49f868e130a3aa/cli/azd/extensions/azure.ai.agents/internal/cmd/init_foundry_resources_helpers.go)
+discovers the project's ContainerRegistry connections and validates the registry
+target and selected name without requiring a sharing flag in that path. This
+source evidence and project visibility support the compatibility choice; they
+do not replace hosted build/image-pull acceptance.
+
+### Nonsecret environment handoff
 
 The [environment adapter](../scripts/export_environment.py) accepts a nonsecret
 version-1 contract or an explicitly nonsensitive `terraform output -json`
@@ -203,11 +260,11 @@ require replacement; model deployments serialize on their account.
 | Backend filtering | Terraform pins `Microsoft.DefaultV2`; Bicep omits `raiPolicyName`. Omission is not proof of the effective default. |
 | Model request rate | The bundled profile requests 100 calls/minute per identity; Bicep has no default request-rate policy. An explicit replacement profile can omit it. |
 | Model account | Terraform retains `allowProjectManagement = true`, versus false in Bicep; no live mutation is included. |
-| Registry sharing | Shared by default in the application root, matching Bicep; standalone support remains unshared. Hosted image pulls still need runtime acceptance. |
+| Registry sharing | Shared by default in the application root, matching Bicep; standalone support remains unshared. The accepted hosted path used project-local compatibility and an immutable image through the explicit platform-default ACR option; other image/registry paths remain unqualified. |
 | Foundry access/monitoring | Enabled by default in the application root, with narrower separate model/tool roles instead of broad AI Gateway User grants |
 | Insights connection | One project-level Terraform owner, using managed identity by default in the application root; not a claim of identical Bicep account-level topology |
-| Gateway telemetry | Native OpenTelemetry is a two-stage Terraform path with an external GET-only readiness helper, not the Bicep mutation hook. Explicit legacy mode remains available; selected-API provisioning, delivery and Portal dashboard acceptance remain outstanding. |
-| Tool/application lifecycle | The explicit-credential tool runner requires exclusive ownership; creation is not atomic. The separate app-only azd helper deploys the agent first and requires another confirmation for its schedule. Terraform remains explicitly staged, not wrapped in native `azd up`. Tooling qualification and full live acceptance remain outstanding. |
+| Gateway telemetry | Native OpenTelemetry is a two-stage Terraform path with an external GET-only readiness helper, not the Bicep mutation hook. Native gateway and agent traces were correlated for the accepted run; exporter migration and the Portal dashboard remain unqualified. |
+| Tool/application lifecycle | The explicit-credential tool runner requires exclusive ownership; creation is not atomic. The app-only azd helper deploys the agent, followed by explicit runtime identity binding and on-demand acceptance before the separate schedule gate. Terraform remains staged, not wrapped in native `azd up`. One live digest is accepted, not recurring execution, full credential rotation or teardown. |
 
 Do not run Bicep mutating hooks against Terraform-owned resources. Exporter
 kind migration can require deletion/recreation and is not automatic or approved

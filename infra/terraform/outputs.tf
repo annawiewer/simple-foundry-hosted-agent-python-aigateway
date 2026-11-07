@@ -85,6 +85,7 @@ output "deployment_contract" {
       registry_id              = module.foundry_agents.container_registry_id
       registry_endpoint        = module.foundry_agents.container_registry_endpoint
       registry_connection_name = module.foundry_agents.registry_connection_name
+      registry_connection_id   = module.foundry_agents.registry_connection_id
       storage_account_id       = module.foundry_agents.storage_account_id
       application_insights_id  = module.foundry_agents.application_insights_id
       log_analytics_id         = module.foundry_agents.log_analytics_id

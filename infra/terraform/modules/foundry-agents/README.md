@@ -46,20 +46,31 @@ backends disabled. It creates no private connectivity and has no gateway
 subnet requirement. The configured Storage `AzureServices` bypass remains;
 the override is not proof of private-only runtime operation.
 
+Storage `networkAcls.resourceAccessRules` is service-owned: Azure/Defender can add
+its StorageDataScanner rule after provisioning. Terraform preserves only this
+field on subsequent plans/updates. Public-network access, default ACL action,
+`AzureServices` bypass, VNet rules, TLS and public-blob/shared-key settings remain
+managed; no scanner permission is added or removed by this module.
+
 The project receives Storage data access, ACR pull access and account-scoped
 Cognitive Services roles. Storage and registry connections depend on their
 grants. ACR uses a project-managed-identity connection, unshared by default;
-`share_registry_connection = true` sets `isSharedToAll` on that same connection.
+`share_registry_connection = true` requests `isSharedToAll` on that same connection.
 It does not enable registry admin credentials or broaden the project AcrPull
 grant. The application root enables sharing through
 `share_foundry_registry_connection`; standalone support does not.
+Sharing is not a prerequisite for the application helper's project-local
+connection check. Independently compare the requested flag with Azure readback
+and a normal refreshed plan; see [project-local compatibility](../../docs/architecture.md#project-local-registry-compatibility).
 Hosted image pulls still need runtime acceptance. AppInsights is
 an unshared project-local ApiKey connection unless explicitly opted in above.
 These are the reusable module's defaults, not the application root's defaults
 or a claim of complete upstream runtime equivalence.
 
 Outputs include account/project IDs and principals, project endpoint,
-registry ID/endpoint/connection name/sharing state, Storage name/ID and monitoring IDs.
+registry ID/endpoint/connection name/connection ID, the configured sharing
+request, Storage name/ID and monitoring IDs. `registry_connection_shared`
+reports the configured request, not independent Azure readback.
 `monitoring_connection_id` exposes the existing project-owned connection ID only
 when the monitoring opt-in is enabled; otherwise it is null.
 The project endpoint is constructed from the supplied account/project names;
