@@ -19,6 +19,10 @@ REGISTRY_READBACK_RUNS = {
     "agents_shared_registry_readback", "reject_registry_unshared_readback",
     "reject_registry_nondefault_readback", "reject_registry_missing_readback",
 }
+MODEL_READBACK_RUNS = {
+    "models_account_readback", "reject_models_project_enabled_readback",
+    "reject_models_missing_readback", "reject_models_null_readback", "reject_models_string_readback",
+}
 
 
 def require(condition, message):
@@ -80,17 +84,20 @@ def check_test_runs(path, text):
     require(not list(blocks(text, "provider")), f"{path}: real provider configuration forbidden")
     runs = list(blocks(text, "run"))
     require(runs, f"{path}: native regression runs missing")
+    module, allowed = {
+        ROOT / "tests" / "agents.tftest.hcl": ("foundry-agents", REGISTRY_READBACK_RUNS),
+        ROOT / "tests" / "models.tftest.hcl": ("foundry-models", MODEL_READBACK_RUNS),
+    }.get(path, ("", set()))
     for names, body in runs:
         if re.search(r'\bcommand\s*=\s*plan\b', body):
             continue
-        # These GET postconditions are deferred until the preceding mock PATCH.
-        require(path == ROOT / "tests" / "agents.tftest.hcl" and
-                names[0] in REGISTRY_READBACK_RUNS and
+        # These GET postconditions are deferred until the preceding mock write.
+        require(names[0] in allowed and
                 re.search(r'\bcommand\s*=\s*apply\b', body) and
                 not re.search(r'\bproviders\s*=', body) and
                 len(mocks) == 1 and not re.search(r'\balias\s*=', mocks[0][1]) and
-                re.search(r'\bsource\s*=\s*"\./modules/foundry-agents"', body),
-                f"{path}: apply is restricted to the isolated registry mock-provider cases")
+                re.search(rf'\bsource\s*=\s*"\./modules/{module}"', body),
+                f"{path}: apply is restricted to the isolated readback mock-provider cases")
 
 
 def check_structure():
@@ -146,6 +153,14 @@ def check_structure():
     deployments = [b for _, n, b in resources if n == ["azapi_resource", "model_deployment"]]
     require(len(deployments) == 1 and re.search(r'\blocks\s*=\s*\[[^\]]*azapi_resource\.models\.id', deployments[0]),
             "Model operations must serialize on their owning account")
+    readbacks = [b for _, n, b in source_blocks("data") if n == ["azapi_resource", "models_readback"]]
+    require(len(readbacks) == 1 and
+            re.search(r'\bdepends_on\s*=\s*\[\s*azapi_resource\.models\s*\]', readbacks[0]),
+            "Model readback must wait for account updates even when its ID is unchanged")
+    for path, names, body in source_blocks("output"):
+        if path.parent == modules / "foundry-models":
+            require(re.search(r'\bdepends_on\s*=\s*\[\s*data\.azapi_resource\.models_readback\s*\]', body),
+                    f"{names[0]}: model output consumers must wait for the account readback")
     for name, dependency in (
         ("foundry_provider", "backend_role_assignment"),
         ("storage_connection", 'role_assignment["project-storage"]'),
@@ -511,6 +526,23 @@ def check_agents(resources, remote_tool=False, monitoring=False, shared_registry
                 "Missing scoped project Storage/ACR grant")
 
 
+def check_model_readback_states(messages):
+    """Check dependent writes, not known outputs retained in a failed partial state."""
+    states = {m["@testrun"]: m["test_state"] for m in messages if m.get("type") == "test_state"}
+    require(MODEL_READBACK_RUNS <= states.keys(), "Model-account mock-apply states missing")
+    for run in MODEL_READBACK_RUNS:
+        state = states[run]
+        owners = {r["address"] for r in state["root_module"].get("resources", []) if r["mode"] == "managed"}
+        if run.startswith("reject_"):
+            require(owners == {"azapi_resource.models"},
+                    f"{run}: failed account readback must block dependent model and developer-grant creation")
+        else:
+            require(owners == {"azapi_resource.models"} | {
+                        f'azapi_resource.model_deployment["{key}"]' for key in PROFILE_PINS
+                    } and set(state.get("outputs", {})) == {"account_id", "endpoint", "deployment_ids", "backend"},
+                    "Confirmed model-only account must preserve all deployments and outputs")
+
+
 def check_plans():
     messages = [json.loads(line) for line in sys.stdin if line.strip()]
     plans = {m["@testrun"]: m["test_plan"] for m in messages if m.get("type") == "test_plan"}
@@ -518,6 +550,9 @@ def check_plans():
                    if m.get("type") == "test_run" and m["test_run"].get("status") == "pass"}
     require(REGISTRY_READBACK_RUNS <= passed_runs,
             "Registry readback postconditions must be exercised with provider-mocked applies")
+    require(MODEL_READBACK_RUNS <= passed_runs,
+            "Model-account readback postconditions must be exercised with provider-mocked applies")
+    check_model_readback_states(messages)
     expected = {"root_default", "root_minimal", "root_custom", "root_single_group", "gateway_module", "models_module",
                 "agents_module", "gateway_only", "existing_models", "existing_models_pregranted",
                 "models_only", "agent_support_only", "root_replacement_profile", "root_backend_revision", "existing_models_custom_profile",

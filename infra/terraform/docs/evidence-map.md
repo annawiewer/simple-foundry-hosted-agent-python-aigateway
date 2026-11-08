@@ -1,7 +1,8 @@
 # Validation and acceptance
 
-**Status: November 7, 2026. Shared/default registry, normal container source
-build and version 5 digest are accepted.** The Terraform path demonstrated
+**Status: November 8, 2026. Shared/default registry, normal container source
+build and version 5 digest remain accepted; strict live model-account alignment
+is blocked.** The Terraform path demonstrated
 infrastructure, integrated ACR build, hosted deployment, gateway/model routing,
 all three real GitHub tools and correlated native telemetry. The normal build
 uses a tag independently bound to its digest, not a digest-pinned reference.
@@ -18,11 +19,12 @@ prove every policy's rejection threshold.
 
 | Area | Established evidence | Boundary / not established by this check |
 |---|---|---|
-| Terraform offline suite | November 7 canonical run: 88 native mocked plans with semantic checks, four isolated mocked applies for deferred registry readback postconditions, 147 Python contracts, five locked root validations, formatting and PowerShell syntax. Adapter handoff assertions are checks within plans, not additional runs. | Not Azure availability or runtime behavior. Default ownership remains 37 Azure resources, including 11 scoped role assignments, plus one non-owning registry PATCH action; opt-in runtime bindings do not change empty-map behavior. |
+| Terraform offline suite | November 8 canonical run: 88 native mocked plans with semantic checks, nine isolated mocked applies (four registry and five model-account readback cases), 147 Python contracts, five locked root validations, formatting and PowerShell syntax. Adapter handoff assertions are checks within plans, not additional runs. | Not Azure availability or runtime behavior. Default ownership remains 37 Azure resources, including 11 scoped role assignments, plus one non-owning registry PATCH action; opt-in runtime bindings do not change empty-map behavior. |
 | Application/container CI | Published-baseline CI passed. The added [CI steps](../../../.github/workflows/ci.yml) build and smoke the actual prepared Terraform context, not a second hand-written Dockerfile. Local frozen application tests and the prepared Linux AMD64 image's smoke assertions passed. | Local evidence does not establish hosted CI success for a particular commit; check that commit's workflow result separately. Local ARM-to-AMD64 emulation required a diagnostic-only longer startup allowance; the repository smoke timeout was not changed. |
 | Normal source-build deployment | With registry sharing/default true, integrated ACR run `dt4` built the seven shared files for Linux AMD64 and deployed version 5. The helper produced a genuine `cli-completed` receipt. Independent reads matched the configured tag to the run's digest before and after the successful digest. See the [normal route](application-flow.md#default-build-and-deploy-the-source). | Tagged reference, not image immutability. Existing-environment qualification with existing permissions; no fresh-from-empty certification or claim about other build/registry modes. |
 | Digest-pinned existing-image route | Earlier ACR run `dt2` built the same seven shared application files for Linux AMD64. Unique run/tag readback and independent registry-manifest lookup agreed on the immutable digest deployed as version 3. See the [optional build recipe](application-flow.md#build-the-selected-source-in-the-existing-registry). | An independently built, source-bound image, not an unexplained prebuilt prerequisite. This earlier run used project-local registry sharing and does not replace the later shared-mode proof. |
-| Integrated application infrastructure | Authoritative state contains 42 Azure resource owners, including 14 scoped role assignments, plus one non-owning registry PATCH action and one GET data entry. Two runtime grants were previously ownership-checked and adopted without Azure mutations. The registry repair's ordinary plan reported no pending changes; final source-runtime checks preserved the resulting state byte-for-byte. | Selected `2025-09-01-preview` gateway deployment only. Registry sharing is now accepted true; RemoteTool sharing remains explicitly project-local despite its source default true. Other regions/modes and omitted catalog `apiFormat` remain unqualified. |
+| Integrated application infrastructure | Authoritative state still contains 42 Azure resource owners, including 14 scoped role assignments, plus one non-owning registry PATCH action and one GET data entry. The November 7 registry/source-runtime checks preserved that accepted checkpoint. The November 8 alignment changed three catalog policies but failed independent model-account acceptance; its ordinary plan still reported changes. | Selected `2025-09-01-preview` gateway deployment only; no current no-change or strict-alignment claim. The new source guard has not been applied to this state. Registry sharing remains accepted true; RemoteTool remains explicitly project-local. Other regions/modes and omitted catalog `apiFormat` remain unqualified. |
+| Model-account fail-closed readback | Five isolated mocked applies accept only boolean false and reject true, missing, null and string responses. Rejected states contain the account but no dependent model deployments or developer grants. The native root graph orders all four outputs and downstream gateway grant/provider/catalog after the independent GET. At 01:17:44 UTC on November 8, a data-only plan using the source postcondition rejected the actual live true value. | Focused negative qualification, not a successful migration or full deployment. No Azure resource writes or inference were made by the probe; the account, authoritative state and accepted runtime receipt were unchanged. Known outputs can remain in failed partial state and are not an acceptance signal. |
 | Shared/default registry repair | At 21:17:22 UTC on November 7, the sole owner followed by native non-owning PATCH and independent GET retained both flags true at project/account endpoints. An ordinary plan exited 0 with no pending resource/output changes. After the new source-build digest, both flags, the existing versions/principal, all 14 roles, tools, exact-agent tenant authorization and disabled routine were preserved. | Target-specific repair and runtime qualification, not proof of a universal service defect or fresh-from-empty lifecycle. The earlier version 3 digest used project-local sharing; its evidence was not relabeled. |
 | Agent and gateway telemetry | The new source-build digest correlated 28 agent and 149 gateway spans with the exact-session console. All three executed-tool spans matched the session, version 5, call IDs and repository arguments; two model and five GitHub backend calls returned HTTP 200. The earlier routine run correlated 28 agent and 146 gateway spans. | Not a zero-error trace: an earlier MCP request returned 499 with `AuthorizationServiceError`, before model/tool execution. Its cause is not established. Policy execution is not rejection proof; Portal-dashboard behavior, all-signal completeness and exporter migration remain unqualified. |
 | Native telemetry source | Two-stage managed ingestion, OTLP endpoints, gateway-identity DCR publishing, a bounded GET-only helper and native/legacy/pending mock plans. See the [usage and migration boundary](native-telemetry.md). | Configuration alone remains insufficient; the preceding row provides separate delivery evidence for this deployment. Exporter migration and other target/endpoint combinations remain unqualified. |
@@ -48,6 +50,54 @@ and a build-scoped CDN mapping; no shared-host DNS, trust or proxy change was
 made. A separate native ARM64 attempt encountered TLS `HandshakeFailure` and
 remains unqualified. The accepted hosted release used the independently
 verified ACR-built Linux AMD64 image.
+
+## Model-account alignment and readback
+
+The November 8 alignment is **partially applied, not accepted**. At 00:44:44
+UTC, Terraform exited successfully after four updates: the model-account
+request and removal of the extra request-rate policy from three catalog
+models. The planned provider-endpoint recomputation resolved unchanged.
+Independent GET still returned `allowProjectManagement=true`, although state
+recorded the requested false value. The account also returned a new
+`armFeatures` entry, `Microsoft.CognitiveServices/CostControls`; its cause
+was not established. The 00:49:14 ordinary plan reported account drift and
+dependent provider recomputation, not convergence.
+
+The 00:58:28 reconciliation preserved every resource ID, all 14 roles, the
+accepted agent versions/builds, shared/default registry, tools, exact-agent
+authorization and disabled routine. It separately recorded the three intended
+policy removals and retained model-account mismatch. No successful alignment
+receipt, state edit, repeated apply, replacement or account-kind conversion
+was used to hide the failure.
+
+The source now orders an independent
+[`models_readback` GET](../modules/foundry-models/main.tf#L25-L39) after account
+writes. Its exact-false postcondition gates model deployments,
+[developer grants](../modules/foundry-models/access.tf#L20-L33) and
+[output consumers](../modules/foundry-models/outputs.tf#L1-L21).
+The [mocked apply cases](../tests/models.tftest.hcl#L48-L109) and
+[native-state checker](../tests/check_contracts.py#L529-L545) exercise that
+boundary without Azure credentials. At 01:17:44 UTC, a separate data-only
+ordinary plan bound the same source condition to the real account and failed
+specifically because the returned flag was true. Before/after account reads
+and authoritative state hashes were unchanged. This check had no managed
+resources, provider registration, apply or inference.
+
+Postcondition failure stops dependent work; it does not undo prior writes
+or erase already-known outputs from partial state. Require a successful apply
+and independent readback before publishing a deployment handoff.
+HashiCorp's pinned
+[account documentation](https://github.com/hashicorp/terraform-provider-azurerm/blob/59eca87035cef81d9c75070b024f2e29e6de2b6d/website/docs/r/cognitive_account.html.markdown)
+and [transition implementation](https://github.com/hashicorp/terraform-provider-azurerm/blob/59eca87035cef81d9c75070b024f2e29e6de2b6d/internal/services/cognitive/resources/cognitive_account/resource.go)
+require replacement when disabling project management while retaining
+AIServices. That guidance supports an explicit migration review, not another
+blind update or a universal claim about every Azure API transition.
+
+Strict model-account alignment remains open. Fresh-account creation,
+migration/cutover, scheduler firing and cost/safety rejection are not certified
+by the negative guard proof. Protected captures and separate hash-bound
+non-acceptance/readback receipts remain private; the November 7 runtime
+acceptance was not rewritten.
 
 ## Shared-registry source-build qualification
 
@@ -109,7 +159,7 @@ access. Passing tests describe their assertions, not missing parity features.
 | [`root.tftest.hcl`](../tests/root.tftest.hcl) | Composition, aliases, input guards, full-root defaults, safety settings and opt-in hosted-identity roles with independent switches and exclusive ownership |
 | [`gateway.tftest.hcl`](../tests/gateway.tftest.hcl) | Standalone gateway, frontend, exporter destination, callers and safety enum rejection |
 | [`telemetry.tftest.hcl`](../tests/telemetry.tftest.hcl) | Native readiness, scoped publisher/exporter and rejection of stale or mismatched handoffs |
-| [`models.tftest.hcl`](../tests/models.tftest.hcl) | Model profile, deployment guards and gateway-only safety metadata without changing the backend filter |
+| [`models.tftest.hcl`](../tests/models.tftest.hcl) | Model profile, exact-false independent account readback, rejected-response downstream blocking and gateway-only safety metadata without changing the backend filter |
 | [`agents.tftest.hcl`](../tests/agents.tftest.hcl) | Independent support resources, network inputs and monitoring connection |
 | [`examples.tftest.hcl`](../tests/examples.tftest.hcl) | Four standalone roots, external-pregrant configuration and existing-model safety opt-in |
 | [`examples-telemetry.tftest.hcl`](../tests/examples-telemetry.tftest.hcl) | Native handoff forwarding through both gateway-bearing examples |
@@ -125,9 +175,12 @@ access. Passing tests describe their assertions, not missing parity features.
 
 ## Remaining qualification boundaries
 
-The accepted demonstrations do not establish the broader guarantees below.
+The accepted demonstrations do not close the live-alignment gap or establish
+the broader guarantees below.
 Each requires separate, explicitly scoped authorization and validation:
 
+- Strict model-account alignment through an explicitly reviewed migration;
+  no unsupported in-place-update workaround or ignored drift.
 - Actual scheduler-time firing, subsequent releases, recovery and teardown.
 - Real credential rotation/revocation, diagnostics-wide secret handling,
   negative authorization and policy rejection scenarios not established above.

@@ -23,6 +23,22 @@ resource "azapi_resource" "models" {
   response_export_values = ["properties.endpoint"]
 }
 
+data "azapi_resource" "models_readback" {
+  type        = azapi_resource.models.type
+  resource_id = azapi_resource.models.id
+  response_export_values = {
+    allowProjectManagement = "properties.allowProjectManagement"
+  }
+  # A successful account update can leave project management enabled.
+  depends_on = [azapi_resource.models]
+  lifecycle {
+    postcondition {
+      condition     = try(self.output.allowProjectManagement == false, false)
+      error_message = "Azure did not confirm allowProjectManagement=false on the model-only account. Stop before deploying models; review an explicit migration for an existing project-enabled AIServices account."
+    }
+  }
+}
+
 resource "azapi_resource" "model_deployment" {
   for_each  = var.model_deployments
   type      = "Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview"
@@ -43,4 +59,5 @@ resource "azapi_resource" "model_deployment" {
       }
     }
   }
+  depends_on = [data.azapi_resource.models_readback]
 }

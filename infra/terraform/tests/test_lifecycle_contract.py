@@ -53,26 +53,30 @@ class LifecycleContractTests(unittest.TestCase):
                 check_lifecycle_masks(self.path, allowed + extra)
 
     def test_permits_only_the_deferred_mock_readback_applies(self):
-        fixture = (
-            'mock_provider "azapi" {}\n'
-            'run "agents_shared_registry_readback" {\n'
-            '  command = apply\n'
-            '  module { source = "./modules/foundry-agents" }\n'
-            '}\n'
-        )
-        path = ROOT / "tests" / "agents.tftest.hcl"
-        check_test_runs(path, fixture)
-        for changed in (
-            fixture.replace('mock_provider "azapi"', 'provider "azapi"'),
-            fixture + 'provider "azapi" {}\n',
-            fixture.replace("agents_shared_registry_readback", "unapproved_apply"),
-            fixture.replace("command = apply", "command = apply\n providers = { azapi = azapi.other }"),
-            fixture.replace("./modules/foundry-agents", "./modules/ai-gateway"),
+        for component, run in (
+            ("agents", "agents_shared_registry_readback"),
+            ("models", "models_account_readback"),
         ):
-            with self.subTest(fixture=changed), self.assertRaises(AssertionError):
-                check_test_runs(path, changed)
-        with self.assertRaises(AssertionError):
-            check_test_runs(path.with_name("other.tftest.hcl"), fixture)
+            fixture = (
+                'mock_provider "azapi" {}\n'
+                f'run "{run}" {{\n'
+                '  command = apply\n'
+                f'  module {{ source = "./modules/foundry-{component}" }}\n'
+                '}\n'
+            )
+            path = ROOT / "tests" / f"{component}.tftest.hcl"
+            check_test_runs(path, fixture)
+            for changed in (
+                fixture.replace('mock_provider "azapi"', 'provider "azapi"'),
+                fixture + 'provider "azapi" {}\n',
+                fixture.replace(run, "unapproved_apply"),
+                fixture.replace("command = apply", "command = apply\n providers = { azapi = azapi.other }"),
+                fixture.replace(f"./modules/foundry-{component}", "./modules/ai-gateway"),
+            ):
+                with self.subTest(component=component, fixture=changed), self.assertRaises(AssertionError):
+                    check_test_runs(path, changed)
+            with self.assertRaises(AssertionError):
+                check_test_runs(path.with_name("other.tftest.hcl"), fixture)
 
 
 if __name__ == "__main__":

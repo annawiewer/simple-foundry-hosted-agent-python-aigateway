@@ -29,4 +29,5 @@ resource "azapi_resource" "role_assignment" {
       roleDefinitionId = "/subscriptions/${var.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/${each.value.role_id}"
     }
   }
+  depends_on = [data.azapi_resource.models_readback]
 }

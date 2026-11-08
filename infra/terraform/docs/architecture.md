@@ -89,7 +89,7 @@ child modules only declare requirements. All configuration dependencies are
 bundled here.
 
 ```text
-root -> model account -> serialized deployments -> backend descriptor
+root -> model account -> independent flag GET -> serialized deployments -> backend descriptor
 root -> gateway + identity
 gateway monitoring -> GET-only readiness handoff -> fresh plan -> DCR grant -> exporter
 backend descriptor + gateway identity -> backend grant -> provider -> catalog -> aliases
@@ -301,7 +301,7 @@ require replacement; model deployments serialize on their account.
 | Gateway/MCP safety | The bundled root selects `Medium` on all models; explicit profiles allow overrides/omission and standalone defaults remain opt-in. The external tool runner also requests Medium for MCP. Selected-API blocking enforcement remains unqualified; backend filtering is a separate control. |
 | Backend filtering | Both paths omit an explicit `raiPolicyName`. Omission neither proves the effective backend policy nor disables filtering; verify the selected deployment independently. |
 | Model request rate | Both bundled profiles omit a default request-rate policy while retaining token/cost controls. An explicit Terraform replacement profile can still configure request limits. |
-| Model account | Both paths set `allowProjectManagement = false` on the model-only account and retain project support on the agent account. An existing account needs a reviewed in-place plan and live qualification. |
+| Model account | Both paths request `allowProjectManagement = false` on the model-only account and retain project support on the agent account. Terraform independently GETs the model account after writes and blocks dependent work unless the flag is exactly false. The November 8 existing-account update retained true despite a successful apply; strict live alignment is not accepted. An existing project-enabled AIServices account needs an explicitly reviewed migration, not repeated in-place updates or ignored drift. See the [guard and partial-state boundary](../modules/foundry-models/README.md) and [qualification](evidence-map.md#model-account-alignment-and-readback). |
 | Registry sharing | Shared by default in the application root, matching Bicep; standalone support remains unshared. The ordered owner/PATCH/GET repair passed live infrastructure acceptance with sharing/default true. The subsequent integrated source-build deployment and version 5 digest also passed, without the registry opt-out. The earlier digest-pinned version 3 used project-local compatibility. See the [qualified scope](evidence-map.md#shared-registry-source-build-qualification); this is not fresh-from-empty certification. |
 | Foundry access/monitoring | Enabled by default in the application root, with narrower separate model/tool roles instead of broad AI Gateway User grants |
 | Insights connection | One project-level Terraform owner, using managed identity by default in the application root; not a claim of identical Bicep account-level topology |

@@ -15,7 +15,7 @@ mock_provider "azapi" {
     }
   }
   mock_data "azapi_resource" {
-    defaults = { output = { isDefault = true, isSharedToAll = true } }
+    defaults = { output = { isDefault = true, isSharedToAll = true, allowProjectManagement = false } }
   }
 }
 

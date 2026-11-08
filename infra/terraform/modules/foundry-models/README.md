@@ -17,8 +17,30 @@ It accepts optional `content_safety_severity` (`Low`, `Medium`, `High` or null)
 for composition with [ai-gateway](../ai-gateway/README.md); accepting metadata
 does not create a gateway policy here.
 
-The model-only account disables local authentication and project management,
-matching Bicep; the separate agent account supports projects.
+The model-only account requests disabled local authentication and project
+management, matching Bicep; the separate agent account supports projects.
+An independent [`models_readback` GET](main.tf#L25-L39) runs after account
+updates and requires the exact boolean `false` for `allowProjectManagement`.
+True, missing, null and string responses fail the operation before dependent
+model deployments and [developer grants](access.tf#L20-L33); all
+[output consumers](outputs.tf#L1-L21) also depend on this check.
+
+An existing project-enabled AIServices account did **not** disable project
+management during the November 8, 2026 in-place qualification, even though
+Terraform apply exited successfully and recorded the requested false value.
+Do not repeatedly apply that change or hide its drift. HashiCorp's pinned
+[account guidance](https://github.com/hashicorp/terraform-provider-azurerm/blob/59eca87035cef81d9c75070b024f2e29e6de2b6d/website/docs/r/cognitive_account.html.markdown)
+requires replacement when disabling project management while retaining
+AIServices; plan an explicitly approved migration instead of assuming
+that a writable API property guarantees an in-place transition.
+The [recorded qualification](../../docs/evidence-map.md#model-account-alignment-and-readback)
+distinguishes this observation from fresh-account provisioning.
+
+The guard stops dependent work; it does not roll back an account update.
+Terraform can retain already-known outputs in a failed partial state.
+Never use those outputs as a successful deployment handoff: require a
+successful apply and independent readback before publishing or consuming it.
+
 Deployments serialize through an account-scoped AzAPI operation lock and omit
 an explicit `raiPolicyName`, matching Bicep. Read back the service's effective
 backend policy rather than assuming a policy name or that filtering is disabled.
