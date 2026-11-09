@@ -580,6 +580,8 @@ def check_plans():
                  "agent_support_monitoring_integration", "alias_protocol_intersection"}
     expected |= {"root_content_safety_overrides", "root_content_safety_disabled", "root_optional_request_limits",
                  "existing_models_content_safety", "models_gateway_safety_metadata"}
+    expected |= {"root_model_account_name_override", "reject_empty_model_account_name",
+                 "reject_invalid_model_account_name", "reject_long_model_account_name"}
     native_ready = {"native_telemetry_ready", "root_native_telemetry", "gateway_only_native", "existing_models_native"}
     legacy = {"gateway_legacy_telemetry", "root_legacy_telemetry"}
     expected |= native_ready | legacy | {
@@ -898,6 +900,22 @@ def check_plans():
     require(default[gateway_address]["name"] == revised[gateway_address]["name"], "Backend revision renamed retained gateway")
     for address in ("module.foundry_models.azapi_resource.models", "module.foundry_agents.azapi_resource.agents"):
         require(default[address]["name"] != revised[address]["name"], "Backend revision failed to isolate rebuilt backend")
+    renamed = resource_map(plans["root_model_account_name_override"])
+    account_address = "module.foundry_models.azapi_resource.models"
+    require(renamed[account_address]["name"] == "aimodels-offline-candidate" and
+            properties(renamed[account_address])["customSubDomainName"] == "aimodels-offline-candidate",
+            "The model-only override must set the actual account name and custom subdomain")
+    require(default.keys() == renamed.keys(), "A model-only name must not change resource ownership")
+    affected = {account_address, "module.ai_gateway.azapi_resource.backend_role_assignment[0]",
+                "module.ai_gateway.azapi_resource.foundry_provider[0]"} | {
+                    f'module.foundry_models.azapi_resource.model_deployment["{key}"]' for key in PROFILE_PINS
+                } | {
+                    f'module.ai_gateway.azapi_resource.catalog_model["{key}"]' for key in PROFILE_PINS
+                }
+    for address in default.keys() - affected:
+        require(all(default[address].get(field) == renamed[address].get(field)
+                    for field in ("name", "parent_id", "location", "tags", "body")),
+                f"Model-only naming changed unrelated configuration: {address}")
     owners = {r["address"] for r in plans["root_default"]["resource_changes"]
               if r["mode"] == "managed" and r["type"] == "azapi_resource"}
     counts = {scope: sum(a.startswith("module." + scope + ".") for a in owners)

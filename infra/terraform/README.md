@@ -65,6 +65,21 @@ publisher grants. Its empty default changes no resources. Follow the
 [postdeployment identity handoff](docs/application-flow.md#3-bind-the-deployed-agent-identity);
 do not duplicate or silently adopt existing operational assignments.
 
+## Model-account naming
+
+The optional `model_account_name` overrides only the models account name and
+its custom subdomain. Its default, `null`, preserves the generated name.
+Gateway, agent account, project, storage, registry and resource-group names
+are unchanged. Use 2-64 letters, digits or hyphens, starting and ending with a
+letter or digit; global custom-subdomain availability must still be checked.
+
+This input is **not a migration or retention mechanism**. Changing an existing
+account's name can replace it and its dependent resources. A side-by-side
+migration needs explicit retained ownership, a separately provisioned backend,
+controlled routing changes and rollback. Do not change `backend_revision` for
+a model-only migration: that input also renames the agent-side resources.
+The model-only account's strict project-management readback remains required.
+
 ## Model content safety
 
 The application root's **bundled model profile now selects `Medium`** for Hate,

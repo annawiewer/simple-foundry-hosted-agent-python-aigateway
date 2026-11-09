@@ -27,6 +27,16 @@ variable "backend_revision" {
   }
 }
 
+variable "model_account_name" {
+  description = "Optional model-account name and custom subdomain. Null preserves generated naming; other backend names are unchanged. Changing an existing account's name requires a separately planned migration."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.model_account_name == null || can(regex("^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}[a-zA-Z0-9]$", var.model_account_name))
+    error_message = "model_account_name must be null or 2-64 letters, digits or hyphens, starting and ending with a letter or digit."
+  }
+}
+
 variable "location" {
   description = "Region supporting Foundry hosted agents, the selected models, storage, ACR, and monitoring. Confirm availability before applying."
   type        = string

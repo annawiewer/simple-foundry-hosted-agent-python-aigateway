@@ -3,6 +3,8 @@ mock_provider "azapi" {
   mock_resource "azapi_resource" {
     defaults = {
       id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/mock/providers/Microsoft.Insights/components/mock"
+      # Stabilize optional/computed metadata across isolated naming scenarios.
+      location = "synthetic-location"
       output = {
         properties = {
           ConnectionString = "synthetic-only-not-a-credential"
@@ -165,6 +167,10 @@ override_resource {
 
 run "root_default" {
   command = plan
+  assert {
+    condition     = local.names.models == "aimodels-470daa23c957"
+    error_message = "A null model-account override must preserve the existing generated name."
+  }
   assert {
     condition = (
       output.gateway_monitoring.configuration_status == "pending" &&
@@ -902,6 +908,60 @@ run "root_replacement_profile" {
     )
     error_message = "Explicit model/alias maps must replace the entire default maps, not merge old model ownership back in."
   }
+}
+
+run "root_model_account_name_override" {
+  command = plan
+  variables { model_account_name = "aimodels-offline-candidate" }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.models
+    override_during = plan
+    values = {
+      id     = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-offline-candidate"
+      output = { properties = { endpoint = "https://candidate-models.example.invalid/" } }
+    }
+  }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.model_deployment["gpt-latest"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-offline-candidate/deployments/gpt-latest" }
+  }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.model_deployment["gpt-6-sol"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-offline-candidate/deployments/gpt-6-sol" }
+  }
+  override_resource {
+    target          = module.foundry_models.azapi_resource.model_deployment["gpt-mini-latest"]
+    override_during = plan
+    values          = { id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-offline-candidate/deployments/gpt-mini-latest" }
+  }
+  assert {
+    condition = (
+      output.foundry_models_id == "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-offline-fixture-470daa23c957-models/providers/Microsoft.CognitiveServices/accounts/aimodels-offline-candidate" &&
+      output.deployment_contract.models.endpoint == "https://candidate-models.example.invalid/" &&
+      alltrue([for id in values(output.model_deployment_ids) : startswith(id, "${output.foundry_models_id}/deployments/")])
+    )
+    error_message = "An explicit model-account name must reach the backend and its complete nonsecret handoff."
+  }
+}
+
+run "reject_empty_model_account_name" {
+  command = plan
+  variables { model_account_name = "" }
+  expect_failures = [var.model_account_name]
+}
+
+run "reject_invalid_model_account_name" {
+  command = plan
+  variables { model_account_name = "models-invalid-" }
+  expect_failures = [var.model_account_name]
+}
+
+run "reject_long_model_account_name" {
+  command = plan
+  variables { model_account_name = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklm" }
+  expect_failures = [var.model_account_name]
 }
 
 run "root_backend_revision" {

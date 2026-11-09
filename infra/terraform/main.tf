@@ -10,7 +10,7 @@ locals {
   resource_group_keys = { for key in ["gateway", "models", "agents"] : key => var.api2026_resource_group_name == null ? key : "gateway" }
   names = {
     gateway  = "aigw-${local.resource_token}"
-    models   = "aimodels-${local.backend_token}"
+    models   = var.model_account_name == null ? "aimodels-${local.backend_token}" : var.model_account_name
     agents   = "aiagents-${local.backend_token}"
     project  = "proj-${local.backend_token}"
     storage  = "st${local.backend_token}"
