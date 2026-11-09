@@ -2,14 +2,23 @@
 
 This sample demonstrates a **hub-and-spoke governance architecture** for Foundry Hosted Agents using **AI Gateway** as the central hub. The Microsoft Agent Framework repo-digest agent runs in an isolated Foundry project spoke (`infra/foundry-agents/`) with zero model deployments and no direct credentials to backing models or external MCP servers. All model inference (`gpt-latest` priority routing across `gpt-6.1-sol` → `gpt-6-sol` → `gpt-5.4-mini`, plus `gpt-mini-latest`) and read-only GitHub MCP tool calls (via Foundry Toolbox) are routed **exclusively through AI Gateway (`infra/ai-gateway/`)** — there is no other access path from the agent to the model account (`infra/foundry-models/`) or to GitHub MCP.
 
-The setup and deployment commands below use **Bicep (the default)**. For the
-alternative infrastructure path, start with the [Terraform guide](infra/terraform/README.md)
-and its [acceptance boundaries](infra/terraform/docs/evidence-map.md).
-The opt-in [guided Terraform application path](infra/terraform/docs/application-flow.md)
-joins the infrastructure/tool handoffs to agent deployment and a separately
-enabled daily schedule. Current-source hosted execution and a daily-routine
-dispatch were verified on November 7, 2026; the routine was then paused.
-See the acceptance matrix for the demonstrated scope and remaining limits.
+## Choose a deployment path
+
+Both paths use the shared Python application and the same hub-and-spoke
+capabilities, but have different infrastructure and lifecycle owners.
+
+| Path | Entry point | Start here |
+|---|---|---|
+| **Bicep + azd** (default) | [`azure.yaml`](azure.yaml) and [`infra/main.bicep`](infra/main.bicep) | Follow the setup below; azd provisions Bicep, runs configuration hooks and deploys the application. |
+| **Terraform** | [`infra/terraform/`](infra/terraform/README.md) | Follow the [staged application guide](infra/terraform/docs/application-flow.md): explicit plan/apply, telemetry and tool handoffs, application deployment, then an opt-in schedule. |
+
+The commands below are the **Bicep workflow**, not a Terraform wrapper.
+Compare [ownership and entry points](infra/README.md#choose-a-deployment-path)
+before choosing a path; do not let both configurations manage the same resources.
+The [Terraform acceptance matrix](infra/terraform/docs/evidence-map.md)
+separates demonstrated behavior from remaining safety, authorization and
+lifecycle gaps. Equivalent intent does not mean identical state, SKU, cost or
+runtime qualification.
 
 ## Prerequisites
 

@@ -6,6 +6,8 @@ the shared hosted application and daily routine. Bicep remains the default
 deployment option. The gateway resource family is
 `Microsoft.ApiManagement/aigateways`, not classic API Management
 `Microsoft.ApiManagement/service`.
+Compare both entry points and their lifecycle ownership in the
+[infrastructure overview](../README.md#choose-a-deployment-path).
 
 **The shared/default registry and normal container source-build path were
 verified on November 7, 2026:** an integrated ACR build deployed agent version 5,

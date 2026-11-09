@@ -1,11 +1,44 @@
 # Infrastructure
 
-Run the commands in this README from the `infra/` directory.
+## Choose a deployment path
 
-For the alternative Terraform infrastructure path, see
-[`terraform/`](terraform/README.md). It provides a separate Terraform-native
-composition and independent examples; it is not yet a replacement for the
-complete Bicep/azd application workflow described below.
+Both choices compose the model account, agent support and AI Gateway for the
+same [Python application](../repo_digest_agent.py). Their entry points and
+deployment ownership are deliberately separate:
+
+| Path | Infrastructure entry | Application and tools | Guide |
+|---|---|---|---|
+| **Bicep + azd** (default) | [`main.bicep`](main.bicep), selected by the root [`azure.yaml`](../azure.yaml) | azd services and the [configuration/lifecycle hooks](scripts/README.md) | [Repository setup](../README.md#prerequisites) and [Bicep workflow](#bicep-workflow) |
+| **Terraform** | The `.tf` files in [`terraform/`](terraform/README.md), composed by [`main.tf`](terraform/main.tf) | Explicit telemetry/tool handoffs and a separate app-only deployment; schedule opt-in | [Preparation and state](terraform/docs/architecture.md#offline-and-deployment-preparation), then [guided application flow](terraform/docs/application-flow.md) |
+
+### Why the workflows differ
+
+Bicep describes ARM resources; azd also runs imperative hooks and deploys the
+application. Provisioning only `main.bicep` does not perform those later steps.
+Terraform's state maps its resource addresses to the Azure objects it owns;
+`plan` proposes changes and an explicitly authorized `apply` executes them.
+Keep that state private and use separate state/backend keys for independent
+deployments. The [state guidance](terraform/docs/architecture.md#offline-and-deployment-preparation)
+explains this repository's local-state default and shared-backend boundary.
+
+These are alternative owners, not interchangeable wrappers for an existing
+deployment. Do not provision both against the same resources or expect a naming
+override to adopt/migrate them. Terraform does not own every ToolServer, Toolbox,
+hosted application or routine through its state, so `terraform destroy` is not
+a complete application teardown. Review the
+[ownership and deliberate differences](terraform/docs/architecture.md#preserved-contracts-and-deliberate-differences)
+and [acceptance boundaries](terraform/docs/evidence-map.md) before deployment.
+Matching architecture does not establish matching live SKU, pricing or every
+policy's enforcement.
+
+For smaller Terraform compositions, use the
+[independent examples](terraform/README.md#start-here); reusable modules live
+under `terraform/modules/`. No Bicep or Terraform directory move is required
+to select either workflow.
+
+## Bicep workflow
+
+Run the remaining Bicep commands in this README from the `infra/` directory.
 
 The subscription-scoped [`main.bicep`](main.bicep) template creates three
 resource groups and deploys one module into each:
@@ -34,8 +67,11 @@ to the `toolServers/github` MCP server. You can also pass optional
 `backendSubnetResourceId` (`properties.backend.subnet.id`, delegated to
 `Microsoft.App/environments`) for outbound VNet integration and
 `allowedCallerCidrRanges` for inbound caller IP filtering (`ipFilter`). The
-`gpt-latest` alias fails over across `gpt-6.1-sol` (priority 0), `gpt-6-sol`
-(priority 1), and `gpt-5.4-mini` (priority 2). See the [AI Gateway module
+`gpt-latest` alias assigns priority 0 to `gpt-6.1-sol`, priority 1 to `gpt-6-sol`,
+and priority 2 to `gpt-5.4-mini`. Priority is not guaranteed error-triggered
+failover; see the [routing boundary](../IMPLEMENTATION_NOTES.md#regions-and-model-defaults).
+Policy configuration alone also does not prove rejection or provide an Azure
+billing ceiling. See the [AI Gateway module
 README](ai-gateway/README.md) for module usage and configuration.
 
 ## Deploy the full stack
