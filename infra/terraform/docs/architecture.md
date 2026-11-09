@@ -3,8 +3,11 @@
 One Terraform composition root calls three independent capability modules.
 The opt-in [application flow](application-flow.md) connects its staged handoffs
 to the shared agent and a separately enabled routine, without invoking Bicep
-provisioning. The current-source hosted digest and routine dispatch are accepted;
-wall-clock scheduling and broader lifecycle scenarios remain separate. See the
+provisioning. The current-source hosted digest, model-only backend cutover,
+bounded cost rejection and one creator-readable scheduled digest have separate
+accepted evidence. Native safety denial, historical response access and the
+recurring MCP authorization error remain unresolved; broader lifecycle
+guarantees are not established. See the
 [acceptance matrix](evidence-map.md#acceptance-matrix).
 
 ## Offline and deployment preparation

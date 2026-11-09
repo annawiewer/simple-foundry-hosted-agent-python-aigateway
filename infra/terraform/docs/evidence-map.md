@@ -1,13 +1,19 @@
 # Validation and acceptance
 
-**Status: November 8, 2026. Shared/default registry, normal container source
-build and version 5 digest remain accepted; strict live model-account alignment
-is blocked.** The Terraform path demonstrated
+**Status: November 9, 2026. The model-only backend cutover, one attributed
+cost-limit rejection and one creator-readable scheduled digest are now
+demonstrated. Overall end-to-end acceptance remains incomplete:** native
+model/MCP safety denial, the historical agent-owned stored-response 403 and
+the recurring MCP 499/`AuthorizationServiceError` remain unresolved.
+
+The shared/default registry, normal container source build and version 5
+digest remain accepted. The Terraform path demonstrated
 infrastructure, integrated ACR build, hosted deployment, gateway/model routing,
 all three real GitHub tools and correlated native telemetry. The normal build
 uses a tag independently bound to its digest, not a digest-pinned reference.
 The earlier immutable-image version 3 and manual daily-routine dispatch remain
-accepted separately. The routine is disabled; wall-clock firing is unproven.
+accepted separately. The original daily routine remains disabled; the temporary
+creator-identity comparison routine was disabled and deleted after observation.
 
 The goal is the same technical demonstration as Bicep, not identical deployment
 commands or lifecycle ownership. Both paths use the shared application and
@@ -19,14 +25,14 @@ prove every policy's rejection threshold.
 
 | Area | Established evidence | Boundary / not established by this check |
 |---|---|---|
-| Terraform offline suite | November 8 canonical run: 88 native mocked plans with semantic checks, nine isolated mocked applies (four registry and five model-account readback cases), 147 Python contracts, five locked root validations, formatting and PowerShell syntax. Adapter handoff assertions are checks within plans, not additional runs. | Not Azure availability or runtime behavior. Default ownership remains 37 Azure resources, including 11 scoped role assignments, plus one non-owning registry PATCH action; opt-in runtime bindings do not change empty-map behavior. |
+| Terraform offline suite | November 8 canonical run, including model-account naming: 92 native mocked plans with semantic checks, nine isolated mocked applies (four registry and five model-account readback cases), 147 Python contracts, five locked root validations, formatting and PowerShell syntax. Adapter handoff assertions are checks within plans, not additional runs. | Not Azure availability or runtime behavior. Default ownership remains 37 Azure resources, including 11 scoped role assignments, plus one non-owning registry PATCH action; opt-in runtime bindings do not change empty-map behavior. |
 | Application/container CI | Published-baseline CI passed. The added [CI steps](../../../.github/workflows/ci.yml) build and smoke the actual prepared Terraform context, not a second hand-written Dockerfile. Local frozen application tests and the prepared Linux AMD64 image's smoke assertions passed. | Local evidence does not establish hosted CI success for a particular commit; check that commit's workflow result separately. Local ARM-to-AMD64 emulation required a diagnostic-only longer startup allowance; the repository smoke timeout was not changed. |
 | Normal source-build deployment | With registry sharing/default true, integrated ACR run `dt4` built the seven shared files for Linux AMD64 and deployed version 5. The helper produced a genuine `cli-completed` receipt. Independent reads matched the configured tag to the run's digest before and after the successful digest. See the [normal route](application-flow.md#default-build-and-deploy-the-source). | Tagged reference, not image immutability. Existing-environment qualification with existing permissions; no fresh-from-empty certification or claim about other build/registry modes. |
 | Digest-pinned existing-image route | Earlier ACR run `dt2` built the same seven shared application files for Linux AMD64. Unique run/tag readback and independent registry-manifest lookup agreed on the immutable digest deployed as version 3. See the [optional build recipe](application-flow.md#build-the-selected-source-in-the-existing-registry). | An independently built, source-bound image, not an unexplained prebuilt prerequisite. This earlier run used project-local registry sharing and does not replace the later shared-mode proof. |
-| Integrated application infrastructure | Authoritative state still contains 42 Azure resource owners, including 14 scoped role assignments, plus one non-owning registry PATCH action and one GET data entry. The November 7 registry/source-runtime checks preserved that accepted checkpoint. The November 8 alignment changed three catalog policies but failed independent model-account acceptance; its ordinary plan still reported changes. | Selected `2025-09-01-preview` gateway deployment only; no current no-change or strict-alignment claim. The new source guard has not been applied to this state. Registry sharing remains accepted true; RemoteTool remains explicitly project-local. Other regions/modes and omitted catalog `apiFormat` remain unqualified. |
+| Integrated application infrastructure | The separately managed November 8 side-by-side cutover was accepted at 11:34 UTC: the serving account returned boolean `allowProjectManagement=false`, with three deployments and no projects. Version 5 runtime and a fresh ordinary no-change plan passed. The accepted migration state has 47 Azure resource owners, including 15 scoped roles, one non-owning registry PATCH action and two GET data entries. November 9 preflight again found no changes; post-run preservation passed. | Deployment-specific migration inventory, not the default-root count or automatic migration behavior. The retained old account was not silently replaced or forgotten. Selected `2025-09-01-preview` gateway only; other regions/modes and omitted catalog `apiFormat` remain unqualified. |
 | Model-account fail-closed readback | Five isolated mocked applies accept only boolean false and reject true, missing, null and string responses. Rejected states contain the account but no dependent model deployments or developer grants. The native root graph orders all four outputs and downstream gateway grant/provider/catalog after the independent GET. At 01:17:44 UTC on November 8, a data-only plan using the source postcondition rejected the actual live true value. | Focused negative qualification, not a successful migration or full deployment. No Azure resource writes or inference were made by the probe; the account, authoritative state and accepted runtime receipt were unchanged. Known outputs can remain in failed partial state and are not an acceptance signal. |
 | Shared/default registry repair | At 21:17:22 UTC on November 7, the sole owner followed by native non-owning PATCH and independent GET retained both flags true at project/account endpoints. An ordinary plan exited 0 with no pending resource/output changes. After the new source-build digest, both flags, the existing versions/principal, all 14 roles, tools, exact-agent tenant authorization and disabled routine were preserved. | Target-specific repair and runtime qualification, not proof of a universal service defect or fresh-from-empty lifecycle. The earlier version 3 digest used project-local sharing; its evidence was not relabeled. |
-| Agent and gateway telemetry | The new source-build digest correlated 28 agent and 149 gateway spans with the exact-session console. All three executed-tool spans matched the session, version 5, call IDs and repository arguments; two model and five GitHub backend calls returned HTTP 200. The earlier routine run correlated 28 agent and 146 gateway spans. | Not a zero-error trace: an earlier MCP request returned 499 with `AuthorizationServiceError`, before model/tool execution. Its cause is not established. Policy execution is not rejection proof; Portal-dashboard behavior, all-signal completeness and exporter migration remain unqualified. |
+| Agent and gateway telemetry | The November 9 creator comparison correlated 28 agent and 147 gateway spans with the completed response, session and version 5. All three tools succeeded; two model and five GitHub backend calls returned HTTP 200. The November 7 source-build digest separately correlated 28 agent and 149 gateway spans. | Not a zero-error trace: the November 9 run again contains an MCP 499 and failed inbound `AuthorizationServiceError`, followed by successful MCP traffic. Missing parent spans prevent establishing retry or root cause. Policy execution is not rejection proof; Portal-dashboard behavior, all-signal completeness and exporter migration remain unqualified. |
 | Native telemetry source | Two-stage managed ingestion, OTLP endpoints, gateway-identity DCR publishing, a bounded GET-only helper and native/legacy/pending mock plans. See the [usage and migration boundary](native-telemetry.md). | Configuration alone remains insufficient; the preceding row provides separate delivery evidence for this deployment. Exporter migration and other target/endpoint combinations remain unqualified. |
 | Model content-safety source | Same-run mock assertions cover the exact four-category body, omission and coexistence with other policies. The bundled root selects Medium; explicit profiles allow Low/Medium/High or null. Standalone defaults and backend Microsoft.DefaultV2 are unchanged. See [configuration and opt-outs](../README.md#model-content-safety). | Mocks do not prove service acceptance or enforcement; the selected-API readback below is narrower than complete policy/runtime qualification. |
 | Selected-2025 model readback | A November 7 disposable-model check returned all four requested Medium safety severities. Model creation, removal and absence were verified. | Requested-body qualification remains incomplete, including omitted `apiFormat`. This was not a runtime safety-enforcement or MCP-safety test. |
@@ -36,11 +42,13 @@ prove every policy's rejection threshold.
 | Actual-agent runtime grants | Exact-principal live readback confirmed gateway Models User and agent-Insights Monitoring Metrics Publisher. Both are now Terraform-owned through [`hosted_agent_principals`](application-flow.md#3-bind-the-deployed-agent-identity), preserving the existing agent principal. | No direct agent Tools User or broad Contributor grant was added. Tenant authorization remains separate; the existing exact-agent exclusion was verified, not modified. |
 | Current-source hosted digest | Version 5 completed all three read-only tools in a version-bound session. Scanned counts were 0 PRs, 0 issues and 20 workflow runs, with no failed workflows observed. The 100-word digest explicitly qualified bounded observations and truncation metadata. Version 3's earlier acceptance remains preserved. | Not an exhaustive repository census or populated-result live UX coverage. Truncation and unavailable-versus-empty behavior have focused regression coverage, not exhaustive service qualification. |
 | Daily routine | Configured `0 9 * * *`, `America/Los_Angeles`; one explicit dispatch completed against the same version/image/principal. Exact dispatch, session and response IDs matched successful agent/model/tool telemetry. Independent readback confirmed the routine disabled afterward. | Manual dispatch is not an observed 09:00 wall-clock firing. The pinned CLI expects `value` while live history returned `data`; the [bounded GET fallback](application-flow.md#verify-the-routine-and-pause-a-demonstration) recovered the run without redispatch. |
+| Scheduled creator comparison | A separately approved timer due November 9 at 08:06:49 UTC invoked version 5 at 08:06:51 UTC without manual dispatch. Creator-scoped response GET returned HTTP 200 with a completed 78-word digest, matching session and telemetry. Its bounded tool results were 0 PRs, 0 issues and 24 completed successful workflow runs. Exact owned cleanup and preservation passed. | A new creator-identity routine, not repair of the historical agent-owned response 403, a change to the application's scheduling default, or proof of repeated daily delivery. The original routine remained disabled. The correlated 499 remains unexplained. See [response and error qualification](#scheduled-response-and-error-qualification). |
 | Shared routine compatibility | The root [Bicep manifest](../../../azure.yaml) now uses supported `agentName`, `cronExpression` and `timeZone`, matching the Terraform authoring path. The regression failed before these three spelling corrections and passed afterward; agent binding, schedule and prompt are preserved. | This is an inherited compatibility repair, not a new Terraform-only feature or proof of a fresh full Bicep deployment. |
 | Model routing | The accepted on-demand and manual-routine digests resolved `gpt-latest` to `gpt-6.1-sol-2026-09-29`, including the new version 5 run; benign direct mini calls resolved to `gpt-5.4-mini-2026-03-17`. Both IaC choices retain the configured priority tiers. | Priority is preference, not guaranteed error-triggered failover. The [official routing lab](https://github.com/Azure/aigateway/blob/6204dd56a94d4b54bfb4493974d70b39de93c18f/labs/22-model-routing/README.md#how-it-works) documents preferred-backend errors returning without retrying lower tiers. |
-| Bounded governance probe | With a temporary mini token limit of 1, one request succeeded and the next returned 429. Its trace identifies `policy tokenLimit` / `OpenAITokenLimitExceeded`, with no backend call. Exact original model properties and unchanged Terraform state were independently verified after restoration. | API-key caller only, not agent-MI rejection. Token throttling persisted into the cost phase and after restoration; cost rejection was not established and rate testing stopped. The benign safety prompt passed, not blocked. |
+| Earlier token-limit probe | With a temporary mini token limit of 1, one request succeeded and the next returned 429. Its trace identifies `policy tokenLimit` / `OpenAITokenLimitExceeded`, with no backend call. Exact original model properties and unchanged Terraform state were independently verified after restoration. | API-key caller only, not agent-MI rejection. Token throttling contaminated this earlier cost phase, so it did not establish cost rejection and rate testing stopped. The benign safety prompt passed, not blocked. |
+| Isolated cost enforcement | A separate November 8 experiment used temporary catalog/alias controls and a scoped caller grant. After HTTP 200 spend, the next request returned HTTP 403 with the uniquely named failed `costLimit` policy and no backend activity in the complete correlated capture. Neutral controls succeeded before and after. All temporary children and the grant were removed; accepted state and resources were preserved. | One bounded direct-model cost rejection, not a billing ceiling, pricing/SKU equivalence, agent-MI or MCP enforcement claim. The harmless Medium-safety probe returned HTTP 200; model safety denial and MCP safety remain unproven. See [governance qualification](#isolated-governance-qualification). |
 | Governance probe recovery | One request after Retry-After returned HTTP 200 at 16:34:53 UTC. Its 12 correlated gateway spans show the intended mini backend and all four original policy configurations. Independent checks confirmed restored properties, unchanged state, active current-source version 3, exact runtime grants and the paused routine. | Seven total probe/recovery requests; recovery made no policy changes, key rotation or counter reset. Successful recovery does not establish cost/rate rejection, safety blocking or the service's internal throttle-reset mechanism. |
-| Application demonstration vs. lifecycle | Infrastructure, source-built hosted digest, routine configuration/dispatch and native observability are demonstrated with separate infrastructure, tool and application owners. | No unattended Terraform `azd up` wrapper, full credential lifecycle, scheduler-time firing, recovery/teardown certification or blanket enforcement claim is supplied. |
+| Application demonstration vs. lifecycle | Infrastructure, source-built hosted digest, routine configuration/dispatch, one creator-readable scheduled delivery and native observability are demonstrated with separate infrastructure, tool and application owners. | No unattended Terraform `azd up` wrapper, repeated-daily-delivery guarantee, full credential lifecycle, recovery/teardown certification or blanket enforcement claim is supplied. |
 
 Storage public access `Disabled` does not provide private connectivity or
 establish hosted-agent readiness.
@@ -53,7 +61,9 @@ verified ACR-built Linux AMD64 image.
 
 ## Model-account alignment and readback
 
-The November 8 alignment is **partially applied, not accepted**. At 00:44:44
+The initial November 8 in-place alignment was **partially applied, not
+accepted**. The later side-by-side cutover below is separate evidence, not a
+reinterpretation of that failure. At 00:44:44
 UTC, Terraform exited successfully after four updates: the model-account
 request and removal of the extra request-rate policy from three catalog
 models. The planned provider-endpoint recomputation resolved unchanged.
@@ -93,11 +103,25 @@ require replacement when disabling project management while retaining
 AIServices. That guidance supports an explicit migration review, not another
 blind update or a universal claim about every Azure API transition.
 
-Strict model-account alignment remains open. Fresh-account creation,
-migration/cutover, scheduler firing and cost/safety rejection are not certified
-by the negative guard proof. Protected captures and separate hash-bound
-non-acceptance/readback receipts remain private; the November 7 runtime
-acceptance was not rewritten.
+### Accepted side-by-side cutover
+
+At 11:34 UTC on November 8, a separately authorized, operator-managed cutover
+was accepted. A new model-only account returned boolean
+`allowProjectManagement=false`, contained the three intended deployments and
+no projects, and retained the expected backend default policies. Gateway
+provider/catalog bindings targeted that account; version 5 completed its
+runtime qualification and a fresh ordinary plan reported no changes.
+The old account remained explicitly owned rather than being deleted or
+removed from state to hide drift.
+
+This closes strict alignment for the serving backend in that existing
+environment. It is not a fresh-from-empty certification, an in-place conversion,
+or migration automation supplied by
+[`model_account_name`](../README.md#model-account-naming).
+Changing that input alone does not retain an old account or perform a cutover.
+Protected captures and separate hash-bound failed/accepted receipts remain
+private; the negative guard proof and earlier runtime acceptance were not
+rewritten.
 
 ## Shared-registry source-build qualification
 
@@ -142,8 +166,62 @@ but this successful digest proves no new rejection threshold.
 Raw captures, prior stopped outcomes and the hash-bound
 `final-acceptance.safe.json` receipt remain private. Final acceptance is a new
 record; it does not rewrite the original response receipt or earlier failures.
-Actual timer firing, cost-limit rejection and Medium safety blocking remain
-separate qualification work.
+Later timer and cost-limit results are separate qualifications below; they do
+not rewrite this source-build acceptance. Medium safety denial remains unproven.
+
+## Isolated governance qualification
+
+On November 8, 21:00-21:04 UTC, a separately authorized attempt made five direct
+model requests using two temporary catalog entries, two aliases and one
+gateway-scoped caller grant. It added no backend model capacity and made no
+application, SKU or MCP change.
+
+The cost sequence returned HTTP 200, then HTTP 403. Correlated telemetry
+attributed the denial to the uniquely named failed `costLimit` policy after
+the successful isolated spend. No backend activity appeared in that denied
+request's complete correlated capture; this is not proof about invisible
+attempts or Azure billing. Neutral safety controls before and after succeeded.
+The harmless safety prompt also returned HTTP 200: native safety denial was
+not demonstrated, which does not by itself establish that safety is broken.
+No MCP safety test was performed.
+
+Exact ownership checks, removal of the four temporary children and grant,
+five independent absence readbacks and accepted-deployment preservation
+completed at 21:10 UTC. Cost rejection is accepted; combined cost-and-safety
+acceptance remains false. The earlier token-throttled experiment retains its
+original, narrower result.
+
+## Scheduled-response and error qualification
+
+The original November 8 scheduled invocation completed its computation:
+three real tools, a complete 81-word digest and successful model/GitHub backend
+calls are bound to its run, session and version 5. The operator's stored-response
+GET nevertheless returned `403 session_not_accessible`. Successful computation
+does not repair that access failure.
+
+The separately authorized November 9 comparison used a new creator-identity
+routine and no new permissions, capacity, policy changes or application release.
+Its timer was due at 08:06:49 UTC; the agent invocation began at 08:06:51 UTC.
+Response GET first returned in-progress, then completed output with HTTP 200.
+The 78-word digest matched the final model output and all three tool payloads,
+including the explicit bounded-scan qualification.
+
+The comparison nevertheless repeated the MCP 499/`AuthorizationServiceError`.
+Subsequent successful calls do not establish a retry mechanism, a harmless
+handshake or a repaired authorization defect. The failed request's upstream
+parent was absent from the capture; root cause remains unresolved.
+
+The sole temporary routine was disabled and deleted, with absence verified at
+08:08 UTC. Original resources, policies, runtime grants, the disabled original
+routine and accepted migration state were preserved. Independent offline
+verification checked all 59 protected request envelopes and their hash-linked
+intents, recomputed response/telemetry correspondence and reviewed the actual
+tool results. These private captures are not committed.
+
+This proves creator-scoped access to one new scheduled response, not access to
+the old agent-owned response. It changes neither the public helper's schedule
+identity behavior nor the original routine. Full end-to-end acceptance and
+error-free execution are not claimed.
 
 ## Run the checks
 
@@ -175,13 +253,15 @@ access. Passing tests describe their assertions, not missing parity features.
 
 ## Remaining qualification boundaries
 
-The accepted demonstrations do not close the live-alignment gap or establish
-the broader guarantees below.
+The accepted demonstrations close the selected backend-alignment, bounded cost
+rejection and creator-readable scheduled-delivery gaps, not the broader
+guarantees below.
 Each requires separate, explicitly scoped authorization and validation:
 
-- Strict model-account alignment through an explicitly reviewed migration;
-  no unsupported in-place-update workaround or ignored drift.
-- Actual scheduler-time firing, subsequent releases, recovery and teardown.
+- Native model and MCP safety denial, access to the historical agent-owned
+  response, and the cause of the recurring MCP 499/authorization error.
+- Fresh-from-empty reproduction, repeated daily delivery, subsequent releases,
+  recovery and teardown.
 - Real credential rotation/revocation, diagnostics-wide secret handling,
   negative authorization and policy rejection scenarios not established above.
 - Other regions, build/registry modes and exporter migration.

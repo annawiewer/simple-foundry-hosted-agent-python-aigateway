@@ -12,8 +12,13 @@ verified on November 7, 2026:** an integrated ACR build deployed agent version 5
 which completed all three GitHub tools through AI Gateway with correlated
 agent/gateway telemetry. Its configured image uses a tag, independently checked
 against the build digest before and after inference. The earlier digest-pinned
-version 3 and manual daily-routine dispatch also remain accepted; the routine
-is disabled, and an actual 09:00 scheduler firing was not observed. The gateway API is
+version 3 and manual daily-routine dispatch also remain accepted. A separate
+November 8 model-only backend cutover and bounded cost rejection passed;
+a November 9 creator-identity timer produced a readable completed digest
+without manual dispatch. Its temporary routine was removed and the original
+daily routine remains disabled. Native safety denial, the historical
+agent-owned response 403 and recurring MCP 499/authorization error remain
+unresolved. The gateway API is
 `2025-09-01-preview`, aligned with the upstream Bicep path. This is one accepted
 runtime path, not certification of every build, credential or lifecycle scenario.
 See the [acceptance matrix and precise boundaries](docs/evidence-map.md#acceptance-matrix).
@@ -125,9 +130,11 @@ environment adapter and [GET-only live qualification runner](docs/live-readback.
 remain separate from application deployment.
 
 See [ownership, state and API differences](docs/architecture.md) and the
-[validation and acceptance guide](docs/evidence-map.md). Scheduled wall-clock
-execution, credential lifecycle guarantees and full teardown remain separate
-qualifications; routine configuration and manual dispatch are accepted.
+[validation and acceptance guide](docs/evidence-map.md). One creator-readable
+scheduled delivery is demonstrated, not a change to the helper's schedule
+identity default or a guarantee of repeated daily delivery. Safety denial,
+historical response access, the recurring authorization error, credential
+lifecycle guarantees and full teardown remain separate qualification work.
 The [application helper](docs/application-flow.md) now provides offline preparation
 and separately confirmed app-only azd deployment; it neither replaces Terraform
 nor installs tools, grants roles or reuses Bicep hooks. The
